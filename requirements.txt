@@ -3,3 +3,4 @@ pandas
 pyarrow
 configparser
 python-dotenv
+python-dateutil
