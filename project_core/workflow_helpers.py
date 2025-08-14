@@ -202,3 +202,28 @@ def run_target_based_workflow(workflow_name, job_processor_func):
         job_processor_func(job, base_output_path, start_date_str, end_date_str)
 
     print(f"\n--- ✅ {workflow_name} Workflow Finished ---")
+
+    def parse_historical_fidelity(fidelity_str):
+        """
+        Parses a fidelity string (e.g., '1 day', '5 minute') into a multiplier and timespan.
+        Returns (None, None) if parsing fails.
+        """
+        if not isinstance(fidelity_str, str):
+            return None, None
+
+        parts = fidelity_str.lower().split()
+        if len(parts) == 2 and parts[0].isdigit():
+            return int(parts[0]), parts[1]
+        return None, None
+
+    def parse_technicals_fidelity(fidelity_str):
+        """
+        Parses a fidelity string for technicals (e.g., '1-day', '5-minute') into a multiplier and timespan.
+        """
+        if not isinstance(fidelity_str, str):
+            return None, None
+
+        parts = fidelity_str.lower().split('-')
+        if len(parts) == 2 and parts[0].isdigit():
+            return int(parts[0]), parts[1]
+        return None, None
