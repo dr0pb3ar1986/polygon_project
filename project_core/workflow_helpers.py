@@ -175,29 +175,46 @@ def run_target_based_workflow(workflow_name, job_processor_func):
     print(f"\n--- ✅ {workflow_name} Workflow Finished ---")
 
 
-# --- ADD THESE FUNCTIONS ---
 def parse_historical_fidelity(fidelity_str):
     """
-    Parses a fidelity string (e.g., '1 day', '5 minute') into a multiplier and timespan.
-    Returns (None, None) if parsing fails.
+    Parses a fidelity string into a valid multiplier and timespan.
+    Handles both single-word fidelities and multiplier-timespan pairs.
     """
     if not isinstance(fidelity_str, str):
         return None, None
 
-    parts = fidelity_str.lower().split()
+    # Define valid single-word fidelities for historical data
+    valid_single_words = {'tick', 'second', 'minute', 'hour', 'day'}
+
+    clean_fidelity = fidelity_str.lower().strip()
+
+    if clean_fidelity in valid_single_words:
+        return 1, clean_fidelity
+
+    parts = clean_fidelity.split()
     if len(parts) == 2 and parts[0].isdigit():
         return int(parts[0]), parts[1]
+
     return None, None
 
 
 def parse_technicals_fidelity(fidelity_str):
     """
-    Parses a fidelity string for technicals (e.g., '1-day', '5-minute') into a multiplier and timespan.
+    Parses a fidelity string for technicals into a valid multiplier and timespan.
     """
     if not isinstance(fidelity_str, str):
         return None, None
 
-    parts = fidelity_str.lower().split('-')
+    # Define valid single-word fidelities for technical indicators
+    valid_single_words = {'minute', 'hour', 'day', 'week', 'month'}
+
+    clean_fidelity = fidelity_str.lower().strip()
+
+    if clean_fidelity in valid_single_words:
+        return 1, clean_fidelity
+
+    parts = clean_fidelity.split('-')
     if len(parts) == 2 and parts[0].isdigit():
         return int(parts[0]), parts[1]
+
     return None, None
