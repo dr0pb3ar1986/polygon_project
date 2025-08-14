@@ -2,17 +2,16 @@
 from workflows.stocks import stocks_ticker_list
 from workflows.stocks import stocks_ticker_overview
 from workflows.stocks import stocks_ticker_relatives
+from workflows.stocks import stocks_trading_history
+from workflows.stocks import stocks_technicals
+from workflows.stocks import stocks_corporate_actions
+from workflows.stocks import stocks_fundamentals
 from workflows.options import options_ticker_list
 from workflows.indices import indices_ticker_list
 from workflows.currency import currency_ticker_list
 from workflows.options import options_ticker_overview
 from workflows.indices import indices_ticker_overview
 from workflows.currency import currency_ticker_overview
-from workflows.stocks import stocks_trading_history
-from workflows.stocks import stocks_technicals
-from workflows.stocks import stocks_corporate_actions
-from workflows.stocks import stocks_fundamentals
-
 
 def main():
     """
