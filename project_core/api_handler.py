@@ -73,6 +73,38 @@ def _fetch_paginated_data_by_next_url(endpoint_path, params, results_extractor):
             current_url = None
     return all_results
 
+def _stream_paginated_data_by_next_url(endpoint_path, params, results_extractor):
+    """
+    A generator-based helper for endpoints that use 'next_url' for pagination.
+    This yields pages of results to keep memory usage low.
+    """
+    api_key = get_api_key()
+    if not api_key:
+        return
+
+    request_params = params.copy()
+    request_params['apiKey'] = api_key
+    current_url = BASE_URL + endpoint_path
+    page_count = 1
+
+    while current_url:
+        print(f"Streaming page {page_count}...")
+        data = _execute_session_get(current_url, params=request_params if page_count == 1 else None)
+        if data is None:
+            break
+
+        results_on_page = results_extractor(data)
+        if results_on_page:
+            print(f"  > Yielding {len(results_on_page)} results from this page.")
+            yield results_on_page
+
+        next_url = data.get('next_url')
+        if next_url:
+            current_url = f"{next_url}&apiKey={api_key}"
+            page_count += 1
+        else:
+            current_url = None
+
 def get_paginated_data(endpoint_path, params):
     """
     Fetches data from a paginated Polygon.io endpoint.
@@ -172,6 +204,41 @@ def get_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=
         page_count += 1
     return all_results
 
+def stream_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=None):
+    """
+    Streams aggregate data page by page to conserve memory.
+    """
+    api_key = get_api_key()
+    if not api_key:
+        return
+
+    try:
+        from_timestamp = int(datetime.strptime(from_date, '%Y-%m-%d').timestamp() * 1000)
+        to_timestamp = int(datetime.strptime(to_date, '%Y-%m-%d').timestamp() * 1000)
+    except ValueError:
+        print(f"  > Invalid date format for {ticker}. Expected YYYY-MM-DD.")
+        return
+
+    current_from = from_timestamp
+    limit = 50000
+    print(f"--- Streaming Aggregates for {ticker} from {from_date} to {to_date} ---")
+
+    while current_from <= to_timestamp:
+        endpoint = f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{current_from}/{to_timestamp}"
+        request_params = params.copy() if params else {}
+        request_params.update({'adjusted': 'true', 'sort': 'asc', 'limit': limit, 'apiKey': api_key})
+        full_url = BASE_URL + endpoint
+
+        data = _execute_session_get(full_url, params=request_params)
+        if data is None or not data.get('results'):
+            break
+
+        results_on_page = data['results']
+        yield results_on_page
+
+        last_timestamp = results_on_page[-1]['t']
+        current_from = last_timestamp + 1
+
 def get_trades_data(ticker, from_date, to_date, params=None):
     endpoint = f"/v3/trades/{ticker}"
     request_params = params.copy() if params else {}
@@ -180,6 +247,17 @@ def get_trades_data(ticker, from_date, to_date, params=None):
     request_params['limit'] = 50000
     print(f"--- Fetching Trades for {ticker} from {from_date} to {to_date} ---")
     return get_paginated_data(endpoint, request_params)
+
+def stream_trades_data(ticker, from_date, to_date, params=None):
+    """Streams trade data page by page to conserve memory."""
+    endpoint = f"/v3/trades/{ticker}"
+    request_params = params.copy() if params else {}
+    request_params['timestamp.gte'] = f"{from_date}T00:00:00Z"
+    request_params['timestamp.lte'] = f"{to_date}T23:59:59Z"
+    request_params['limit'] = 50000
+    print(f"--- Streaming Trades for {ticker} from {from_date} to {to_date} ---")
+    yield from _stream_paginated_data_by_next_url(endpoint, request_params, lambda data: data.get('results', []))
+
 
 def get_technical_indicator_data(indicator_name, ticker, timespan, from_date, to_date, params=None):
     endpoint_path = f"/v1/indicators/{indicator_name}/{ticker}"

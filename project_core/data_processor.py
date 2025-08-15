@@ -1,5 +1,7 @@
 import pandas as pd
 import os
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 
 def _ensure_directory_exists(filepath):
@@ -61,6 +63,66 @@ def save_to_parquet(data, output_path, timestamp_col='t'):
     except Exception as e:
         print(f"Error saving data to Parquet: {e}")
 
+
+def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first_chunk_callback=None):
+    """
+    Takes a generator of data chunks (lists of dicts), converts each to a
+    DataFrame, and appends to a single Parquet file, keeping memory usage low.
+
+    :param data_generator: A generator that yields lists of dictionaries.
+    :param output_path: The full path for the output Parquet file.
+    :param timestamp_col: The name of the timestamp column in the raw data.
+    :param first_chunk_callback: An optional function to run on the first chunk of data.
+    """
+    writer = None
+    total_records = 0
+    try:
+        for i, chunk in enumerate(data_generator):
+            if not chunk:
+                continue
+
+            if i == 0 and first_chunk_callback:
+                first_chunk_callback(chunk)
+
+            # Bypass pandas DataFrame for better memory efficiency by creating a PyArrow Table directly.
+            table = pa.Table.from_pylist(chunk)
+
+            if table.num_rows == 0:
+                continue
+
+            total_records += table.num_rows
+
+            # Perform timestamp conversion and renaming directly in PyArrow.
+            if timestamp_col in table.column_names:
+                new_columns = []
+                new_names = []
+                for name, column_array in zip(table.column_names, table.columns):
+                    if name == timestamp_col:
+                        new_names.append('timestamp')
+                        new_columns.append(column_array.cast(pa.timestamp('ms', tz='UTC')))
+                    else:
+                        new_names.append(name)
+                        new_columns.append(column_array)
+                table = pa.Table.from_arrays(new_columns, names=new_names)
+
+            if writer is None:
+                _ensure_directory_exists(output_path)
+                writer = pq.ParquetWriter(output_path, table.schema, compression='snappy')
+
+            # Ensure subsequent chunks conform to the initial schema to prevent errors.
+            if not table.schema.equals(writer.schema):
+                table = table.cast(writer.schema)
+
+            writer.write_table(table)
+
+        if total_records > 0:
+            print(f"Successfully streamed {total_records} records to {output_path}")
+
+    except Exception as e:
+        print(f"Error saving data stream to Parquet: {e}")
+    finally:
+        if writer:
+            writer.close()
 
 # At the top of data_processor.py, add this import
 from project_core import file_manager

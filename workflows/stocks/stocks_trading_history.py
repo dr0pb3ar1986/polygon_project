@@ -7,28 +7,32 @@ from project_core import api_handler, data_processor, workflow_helpers
 DEBUG_SAMPLE_ROWS = 1000
 
 
-def _save_trading_history_data(data, base_path, ticker, fidelity, timespan, start_date, end_date):
+def _save_trading_history_data(data_stream, base_path, ticker, fidelity, timespan, start_date, end_date, debug_callback=None):
     """Handles the logic for saving trading history data to Parquet/CSV and creating debug files."""
-    if not data:
-        print(f"  > No data returned for {ticker} for range {start_date} to {end_date}, skipping save.")
-        return
-
     fidelity_folder = fidelity.replace(" ", "-")
     output_dir = os.path.join(base_path, "stocks", "trading_history", ticker, fidelity_folder)
     filename_base = f"{ticker}_{fidelity_folder}_{start_date}_to_{end_date}"
 
+    # Daily data is usually small, so we can materialize the stream into a list.
     if timespan == "day":
-        main_filepath = os.path.join(output_dir, f"{filename_base}.csv")
-        print(f"  > Saving {len(data)} records to {main_filepath}")
-        data_processor.save_to_csv(data, main_filepath)
-    else:
-        main_filepath = os.path.join(output_dir, f"{filename_base}.parquet")
-        print(f"  > Saving {len(data)} records to {main_filepath}")
-        data_processor.save_to_parquet(data, main_filepath)
+        # The stream yields pages (lists of dicts), so we flatten it.
+        all_data = [item for page in data_stream for item in page]
+        if not all_data:
+            print(f"  > No data returned for {ticker} for range {start_date} to {end_date}, skipping save.")
+            return
 
-        debug_csv_path = os.path.join(output_dir, f"{filename_base}_DEBUG.csv")
-        print(f"  > Saving debug sample of {DEBUG_SAMPLE_ROWS} rows to {debug_csv_path}")
-        data_processor.save_to_csv(data[:DEBUG_SAMPLE_ROWS], debug_csv_path)
+        main_filepath = os.path.join(output_dir, f"{filename_base}.csv")
+        print(f"  > Saving {len(all_data)} records to {main_filepath}")
+        data_processor.save_to_csv(all_data, main_filepath)
+    else:
+        # For large Parquet files, we stream directly to disk.
+        main_filepath = os.path.join(output_dir, f"{filename_base}.parquet")
+
+        data_processor.save_stream_to_parquet(
+            data_stream,
+            main_filepath,
+            first_chunk_callback=debug_callback
+        )
 
 
 def _process_trading_history_job(job, base_path, start_date, end_date):
@@ -45,11 +49,18 @@ def _process_trading_history_job(job, base_path, start_date, end_date):
             print(f"  > Could not parse 'ticker_fidelity': '{fidelity}'. Skipping.")
             return
 
+        # Define the single, persistent debug file path for the entire job.
+        fidelity_folder = fidelity.replace(" ", "-")
+        output_dir_base = os.path.join(base_path, "stocks", "trading_history", ticker, fidelity_folder)
+        debug_file_path = os.path.join(output_dir_base, f"{ticker}_{fidelity_folder}_DEBUG.csv")
+        debug_file_exists = os.path.exists(debug_file_path)
+
         overall_start_date = datetime.strptime(start_date, '%Y-%m-%d')
         overall_end_date = datetime.strptime(end_date, '%Y-%m-%d')
 
         # Loop through the total date range in monthly intervals
         current_date = overall_start_date
+        is_first_chunk = True  # Track the first iteration of the loop
         while current_date <= overall_end_date:
             # Define the start and end of the calendar month for the current chunk
             chunk_start = current_date.replace(day=1)
@@ -68,14 +79,24 @@ def _process_trading_history_job(job, base_path, start_date, end_date):
 
             # Fetch and save data for this specific chunk
             if timespan == 'tick':
-                fetched_data = api_handler.get_trades_data(ticker, chunk_start_str, chunk_end_str)
+                data_stream = api_handler.stream_trades_data(ticker, chunk_start_str, chunk_end_str)
             else:
-                fetched_data = api_handler.get_aggregate_data(ticker, multiplier, timespan, chunk_start_str, chunk_end_str)
+                data_stream = api_handler.stream_aggregate_data(ticker, multiplier, timespan, chunk_start_str, chunk_end_str)
 
-            _save_trading_history_data(fetched_data, base_path, ticker, fidelity, timespan, chunk_start_str, chunk_end_str)
+            # Prepare the debug callback only for the first chunk if the file doesn't exist.
+            debug_callback = None
+            if is_first_chunk and not debug_file_exists and timespan != 'day':
+                def save_debug_file_once(first_chunk):
+                    """A callback to save the first few rows for easy inspection."""
+                    print(f"  > Saving one-time debug sample of up to {DEBUG_SAMPLE_ROWS} rows to {debug_file_path}")
+                    data_processor.save_to_csv(first_chunk[:DEBUG_SAMPLE_ROWS], debug_file_path)
+                debug_callback = save_debug_file_once
+
+            _save_trading_history_data(data_stream, base_path, ticker, fidelity, timespan, chunk_start_str, chunk_end_str, debug_callback=debug_callback)
 
             # Move to the next month for the next iteration
             current_date = (current_date.replace(day=1) + relativedelta(months=1))
+            is_first_chunk = False  # Ensure callback is only prepared once
 
     except Exception as e:
         print(f"  > ❌ An unexpected error occurred while processing job for {ticker}: {e}")
