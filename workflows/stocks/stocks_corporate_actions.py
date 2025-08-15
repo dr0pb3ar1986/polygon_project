@@ -37,3 +37,8 @@ def _process_corporate_actions_job(job, base_path, start_date, end_date):
 def fetch_and_save_corporate_actions():
     """Main workflow to fetch corporate actions based on the target list."""
     workflow_helpers.run_target_based_workflow("Fetch Corporate Actions", _process_corporate_actions_job)
+
+
+# This allows the file to be run directly for testing or ad-hoc execution.
+if __name__ == "__main__":
+    fetch_and_save_corporate_actions()

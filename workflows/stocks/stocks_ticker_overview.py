@@ -13,3 +13,8 @@ def fetch_and_save_all_stock_overviews():
         api_handler.get_ticker_details,
         post_processor=workflow_helpers.format_stock_overview_data
     )
+
+
+# This allows the file to be run directly for testing or ad-hoc execution.
+if __name__ == "__main__":
+    fetch_and_save_all_stock_overviews()

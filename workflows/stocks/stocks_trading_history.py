@@ -59,3 +59,8 @@ def _process_trading_history_job(job, base_path, start_date, end_date):
 def fetch_and_save_trading_history():
     """Main workflow to read a target list and fetch stock trading history."""
     workflow_helpers.run_target_based_workflow("Fetch Stock Trading History", _process_trading_history_job)
+
+
+# This allows the file to be run directly for testing or ad-hoc execution.
+if __name__ == "__main__":
+    fetch_and_save_trading_history()

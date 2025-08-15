@@ -36,3 +36,8 @@ def _process_fundamentals_job(job, base_path, start_date, end_date):
 def fetch_and_save_fundamentals():
     """Main workflow to fetch fundamentals based on the target list."""
     workflow_helpers.run_target_based_workflow("Fetch Fundamentals", _process_fundamentals_job)
+
+
+# This allows the file to be run directly for testing or ad-hoc execution.
+if __name__ == "__main__":
+    fetch_and_save_fundamentals()
