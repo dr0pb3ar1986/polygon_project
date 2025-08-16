@@ -3,6 +3,9 @@ import os
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+# At the top of data_processor.py, add this import
+from project_core import file_manager
+
 
 def _ensure_directory_exists(filepath):
     """A private helper to check if a directory exists and create it if not."""
@@ -74,6 +77,21 @@ def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first
     :param timestamp_col: The name of the timestamp column in the raw data.
     :param first_chunk_callback: An optional function to run on the first chunk of data.
     """
+    # Define a consistent schema to prevent errors from optional fields
+    trades_schema = pa.schema([
+        pa.field('sip_timestamp', pa.int64()),
+        pa.field('participant_timestamp', pa.int64()),
+        pa.field('trf_timestamp', pa.int64()),
+        pa.field('id', pa.string()),
+        pa.field('sequence_number', pa.int64()),
+        pa.field('exchange', pa.int64()),
+        pa.field('price', pa.float64()),
+        pa.field('size', pa.int64()),
+        pa.field('conditions', pa.list_(pa.int64())),
+        pa.field('tape', pa.int64()),
+        pa.field('trf_id', pa.int64()),
+    ])
+
     writer = None
     total_records = 0
     try:
@@ -84,8 +102,9 @@ def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first
             if i == 0 and first_chunk_callback:
                 first_chunk_callback(chunk)
 
-            # Bypass pandas DataFrame for better memory efficiency by creating a PyArrow Table directly.
-            table = pa.Table.from_pylist(chunk)
+            # Create a PyArrow Table directly with the pre-defined schema.
+            # This handles missing fields by inserting nulls.
+            table = pa.Table.from_pylist(chunk, schema=trades_schema)
 
             if table.num_rows == 0:
                 continue
@@ -107,12 +126,10 @@ def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first
 
             if writer is None:
                 _ensure_directory_exists(output_path)
+                # The schema for the writer is now explicitly defined by the table we just created.
                 writer = pq.ParquetWriter(output_path, table.schema, compression='snappy')
 
-            # Ensure subsequent chunks conform to the initial schema to prevent errors.
-            if not table.schema.equals(writer.schema):
-                table = table.cast(writer.schema)
-
+            # We can remove the schema check, as it is now consistently defined.
             writer.write_table(table)
 
         if total_records > 0:
@@ -123,10 +140,6 @@ def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first
     finally:
         if writer:
             writer.close()
-
-# At the top of data_processor.py, add this import
-from project_core import file_manager
-
 
 # Add this new function to the file
 def load_latest_ticker_list(asset_class):
@@ -163,8 +176,6 @@ def load_latest_ticker_list(asset_class):
     return []
 
 # This special block of code is for testing our new functions.
-
-
 def load_target_tickers(filepath):
     """
     Loads a manually-created CSV of tickers and their data requirements.
