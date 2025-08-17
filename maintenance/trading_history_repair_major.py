@@ -5,7 +5,7 @@ from dateutil.relativedelta import relativedelta
 import collections
 
 # Import the project's own tools
-from project_core import file_manager, workflow_helpers
+from project_core import file_manager, workflow_helpers, error_logger
 from workflows.stocks import stocks_trading_history
 
 
@@ -18,6 +18,7 @@ def scan_and_repair_trading_history():
     monthly files up to the current date. If a job is found to be incomplete,
     all its existing files are deleted and the entire job is re-downloaded.
     """
+    error_logger.register_error_handler()
     print("--- 🚀 LAUNCHING DIRECTORY-BASED HISTORY SCANNER AND REPAIR TOOL ---")
 
     # --- STAGE 1: Discover All Jobs by Scanning the Directory ---

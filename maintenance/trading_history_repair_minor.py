@@ -5,7 +5,7 @@ from dateutil.relativedelta import relativedelta
 import collections
 
 # Import the project's own tools
-from project_core import file_manager, workflow_helpers
+from project_core import file_manager, workflow_helpers, error_logger
 from workflows.stocks import stocks_trading_history
 
 
@@ -15,6 +15,7 @@ def repair_minor_trading_history():
     job, it determines the intended date range and downloads ONLY the specific
     monthly files that are missing, leaving existing files untouched.
     """
+    error_logger.register_error_handler()
     print("--- 🚀 LAUNCHING MINOR TRADING HISTORY REPAIR TOOL ---")
 
     # --- STAGE 1: Discover All Jobs and Their Files ---

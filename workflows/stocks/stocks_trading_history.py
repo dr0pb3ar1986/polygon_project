@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from project_core import api_handler, data_processor, workflow_helpers
+from project_core import api_handler, data_processor, workflow_helpers, error_logger
 
 # Define constants at the module level for clarity and easy modification.
 DEBUG_SAMPLE_ROWS = 1000
@@ -46,7 +46,9 @@ def _process_trading_history_job(job, base_path, start_date, end_date):
     try:
         multiplier, timespan = workflow_helpers.parse_historical_fidelity(fidelity)
         if not timespan:
-            print(f"  > Could not parse 'ticker_fidelity': '{fidelity}'. Skipping.")
+            reason = f"Could not parse 'ticker_fidelity': '{fidelity}'."
+            print(f"  > {reason} Skipping.")
+            error_logger.log_error(ticker, fidelity, start_date, end_date, reason, os.path.basename(__file__))
             return
 
         # Define the single, persistent debug file path for the entire job.
@@ -72,38 +74,54 @@ def _process_trading_history_job(job, base_path, start_date, end_date):
             if chunk_end > overall_end_date:
                 chunk_end = overall_end_date
 
-            chunk_start_str = chunk_start.strftime('%Y-%m-%d')
-            chunk_end_str = chunk_end.strftime('%Y-%m-%d')
+            try:
+                chunk_start_str = chunk_start.strftime('%Y-%m-%d')
+                chunk_end_str = chunk_end.strftime('%Y-%m-%d')
 
-            print(f"  > Processing chunk for {ticker} from {chunk_start_str} to {chunk_end_str}...")
+                print(f"  > Processing chunk for {ticker} from {chunk_start_str} to {chunk_end_str}...")
 
-            # Fetch and save data for this specific chunk
-            if timespan == 'tick':
-                data_stream = api_handler.stream_trades_data(ticker, chunk_start_str, chunk_end_str)
-            else:
-                data_stream = api_handler.stream_aggregate_data(ticker, multiplier, timespan, chunk_start_str, chunk_end_str)
+                # Fetch and save data for this specific chunk
+                if timespan == 'tick':
+                    data_stream = api_handler.stream_trades_data(ticker, chunk_start_str, chunk_end_str)
+                else:
+                    data_stream = api_handler.stream_aggregate_data(ticker, multiplier, timespan, chunk_start_str, chunk_end_str)
 
-            # Prepare the debug callback only for the first chunk if the file doesn't exist.
-            debug_callback = None
-            if is_first_chunk and not debug_file_exists and timespan != 'day':
-                def save_debug_file_once(first_chunk):
-                    """A callback to save the first few rows for easy inspection."""
-                    print(f"  > Saving one-time debug sample of up to {DEBUG_SAMPLE_ROWS} rows to {debug_file_path}")
-                    data_processor.save_to_csv(first_chunk[:DEBUG_SAMPLE_ROWS], debug_file_path)
-                debug_callback = save_debug_file_once
+                # Prepare the debug callback only for the first chunk if the file doesn't exist.
+                debug_callback = None
+                if is_first_chunk and not debug_file_exists and timespan != 'day':
+                    def save_debug_file_once(first_chunk):
+                        """A callback to save the first few rows for easy inspection."""
+                        print(f"  > Saving one-time debug sample of up to {DEBUG_SAMPLE_ROWS} rows to {debug_file_path}")
+                        data_processor.save_to_csv(first_chunk[:DEBUG_SAMPLE_ROWS], debug_file_path)
+                    debug_callback = save_debug_file_once
 
-            _save_trading_history_data(data_stream, base_path, ticker, fidelity, timespan, chunk_start_str, chunk_end_str, debug_callback=debug_callback)
+                _save_trading_history_data(data_stream, base_path, ticker, fidelity, timespan, chunk_start_str, chunk_end_str, debug_callback=debug_callback)
+
+            except Exception as e:
+                # If an error occurs during this chunk's processing, log it and continue the loop.
+                error_logger.log_error(
+                    ticker=ticker,
+                    fidelity=fidelity,
+                    start_date=chunk_start.strftime('%Y-%m-%d'),
+                    end_date=chunk_end.strftime('%Y-%m-%d'),
+                    reason=e,
+                    script_name=os.path.basename(__file__)
+                )
+                print(f"  > ❌ An error occurred while processing chunk for {ticker}: {e}")
 
             # Move to the next month for the next iteration
             current_date = (current_date.replace(day=1) + relativedelta(months=1))
             is_first_chunk = False  # Ensure callback is only prepared once
 
     except Exception as e:
+        # This catches setup errors (e.g., bad job data) before the loop starts.
         print(f"  > ❌ An unexpected error occurred while processing job for {ticker}: {e}")
+        error_logger.log_error(ticker, fidelity, start_date, end_date, e, os.path.basename(__file__))
 
 
 def fetch_and_save_trading_history():
     """Main workflow to read a target list and fetch stock trading history."""
+    error_logger.register_error_handler()
     workflow_helpers.run_target_based_workflow("Fetch Stock Trading History", _process_trading_history_job)
 
 

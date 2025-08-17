@@ -3,7 +3,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # Import the project's own tools
-from project_core import file_manager, workflow_helpers
+from project_core import file_manager, workflow_helpers, error_logger
 from workflows.stocks import stocks_trading_history
 
 # --- USER ACTION REQUIRED ---
@@ -35,6 +35,7 @@ def cleanup_and_redownload():
     A one-off script to find and delete potentially corrupt trading history
     files and then trigger a re-download for only those specific jobs.
     """
+    error_logger.register_error_handler()
     print("--- 🚀 LAUNCHING FAILED DOWNLOAD FIXER ---")
 
     if not FAILED_JOBS:
