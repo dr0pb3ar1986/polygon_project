@@ -97,7 +97,8 @@ def detect_trading_history_anomalies(size_threshold_percent=20.0):
                     'neighbor_avg_size_kb': round(comparison_size / 1024, 2),
                     'percent_smaller': round(percentage_diff, 2),
                     'reason': f"File is {round(percentage_diff, 2)}% smaller than its neighbors.",
-                    'full_path': sorted_files[i]['path']
+                    'full_path': sorted_files[i]['path'],
+                    'ignore': ''  # Add the new empty 'ignore' column
                 }
                 anomalies.append(anomaly)
                 print(f"  > ❗ ANOMALY FOUND for {ticker}: {os.path.basename(sorted_files[i]['path'])}")
