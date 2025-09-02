@@ -5,7 +5,6 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 import re
-import html
 from bs4 import BeautifulSoup
 
 # --- Global Configuration and Session for efficiency ---
@@ -66,7 +65,7 @@ def _fetch_paginated_data_by_next_url(endpoint_path, params, results_extractor):
     while current_url:
         print(f"Fetching page {page_count}...")
         data = _execute_session_get(current_url, params=request_params if page_count == 1 else None)
-        if data is None:
+        if data is None or not isinstance(data, dict):
             break
 
         results_on_page = results_extractor(data)
@@ -98,7 +97,7 @@ def _stream_paginated_data_by_next_url(endpoint_path, params, results_extractor)
     while current_url:
         print(f"Streaming page {page_count}...")
         data = _execute_session_get(current_url, params=request_params if page_count == 1 else None)
-        if data is None:
+        if data is None or not isinstance(data, dict):
             break
 
         results_on_page = results_extractor(data)
@@ -140,7 +139,7 @@ def _make_api_request(endpoint_path, params=None, log_message="", success_key='r
 
     data = _execute_session_get(full_url, params=request_params)
 
-    if data is not None:
+    if data is not None and isinstance(data, dict):
         return data.get(success_key, default_return_value)
     else:
         return default_return_value
@@ -196,7 +195,7 @@ def get_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=
         print(f"Fetching page {page_count}...")
         data = _execute_session_get(full_url, params=request_params)
 
-        if data is None:
+        if data is None or not isinstance(data, dict):
             break
         results_on_page = data.get('results', [])
         if not results_on_page:
@@ -238,10 +237,13 @@ def stream_aggregate_data(ticker, multiplier, timespan, from_date, to_date, para
         full_url = BASE_URL + endpoint
 
         data = _execute_session_get(full_url, params=request_params)
-        if data is None or not data.get('results'):
+        if data is None or not isinstance(data, dict):
             break
 
-        results_on_page = data['results']
+        results_on_page = data.get('results', [])
+        if not results_on_page:
+            break
+
         yield results_on_page
 
         last_timestamp = results_on_page[-1]['t']
@@ -401,7 +403,6 @@ def download_raw_sec_filing(txt_file_url):
         return None
 
 
-# Replace the old function with this new one
 def parse_and_clean_filing_text(raw_filing_text):
     """
     Uses BeautifulSoup to parse the raw filing HTML and produce a clean,
@@ -411,22 +412,16 @@ def parse_and_clean_filing_text(raw_filing_text):
         return None
 
     # --- Step 1: Parse the HTML with BeautifulSoup ---
-    # We use the 'lxml' parser for its speed and ability to handle messy HTML.
     soup = BeautifulSoup(raw_filing_text, 'lxml')
 
     # --- Step 2: Extract Text and Apply Formatting ---
-    # The .get_text() method is powerful. We use a separator to preserve line breaks
-    # and tell it to strip extra whitespace.
     text = soup.get_text(separator='\n', strip=True)
 
     # --- Step 3: Refine Formatting with Targeted Regex ---
-    # Add emphasis to major headings like "PART I" or "Item 1A."
-    # This makes the document's structure immediately clear.
     text = re.sub(r'(^\s*(PART\s+[IVX]+|ITEM\s+\d+[A-Z]?\.?)\s*$)',
                   r'\n-- **\1** --', text, flags=re.MULTILINE | re.IGNORECASE)
 
     # --- Step 4: Final Whitespace Cleanup ---
-    # Ensure there's a maximum of two consecutive newlines to create clean paragraphs.
     text = re.sub(r'\n\s*\n', '\n\n', text)
 
     return text.strip()
