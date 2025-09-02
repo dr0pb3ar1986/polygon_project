@@ -40,7 +40,7 @@ def _execute_session_get(url, params=None, headers=None):
         # Check if response is JSON before trying to decode
         if 'application/json' in response.headers.get('Content-Type', ''):
             return response.json()
-        return response.text # Return as text for non-JSON responses
+        return response # Return the full response object for non-JSON responses
     except requests.exceptions.Timeout:
         print(f"  > Request timed out for URL: {url}")
         return None
@@ -392,12 +392,14 @@ def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
 def download_raw_sec_filing(txt_file_url):
     """
     Downloads the full, raw content of a single SEC filing from its direct .txt URL.
+    It decodes the content as UTF-8, replacing any errors.
     """
     try:
         # The SEC requires a custom User-Agent header for direct requests.
-        headers = {'User-Agent': 'YourCompanyName YourName youremail@example.com'}
+        headers = {'User-Agent': 'DataFetcher/1.0 (your_company; your_email@example.com)'}
         response = _execute_session_get(txt_file_url, headers=headers)
-        return response
+        # Decode response content explicitly to handle encoding issues gracefully
+        return response.content.decode('utf-8', errors='replace') if response else None
     except Exception as e:
         print(f"  > Error downloading raw filing from {txt_file_url}: {e}")
         return None
