@@ -87,3 +87,26 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    from workflows.stocks import stocks_sec_filings
+
+
+    def main():
+        """
+        This master script runs all the desired reference data workflows in sequence.
+        """
+        # ... (keep all your existing workflow calls) ...
+
+        # --- STAGE 8: Process SEC Filings ---
+        print("\n--- Processing SEC Filings for Stocks ---")
+        try:
+            stocks_sec_filings.fetch_and_save_sec_filings()
+            print("\n--- ✔️ SEC Filings Complete ---")
+        except Exception as e:
+            print(f"\n--- ❌ An error occurred during the SEC filings workflow: {e} ---")
+
+        print("\n--- ✅ MASTER WORKFLOW FINISHED ---")
+
+
+    if __name__ == "__main__":
+        main()

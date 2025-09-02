@@ -314,3 +314,82 @@ def get_short_interest_data(ticker, from_date, to_date):
 def get_short_volume_data(ticker, from_date, to_date):
     params = {'date.gte': from_date, 'date.lte': to_date, 'limit': 1000}
     return get_paginated_data(f'/v3/short-volume/{ticker}', params)
+
+# --- SEC API Functions ---
+
+_SEC_API_KEY = None
+
+
+def get_sec_api_key():
+    """
+    Loads the SEC API key from the .env file, caching it for subsequent calls.
+    """
+    global _SEC_API_KEY
+    if _SEC_API_KEY is None:
+        load_dotenv()
+        _SEC_API_KEY = os.getenv("SEC_API_IO_KEY")
+        if not _SEC_API_KEY:
+            print("Error: 'SEC_API_IO_KEY' not found. Make sure it is set correctly in your .env file.")
+            return None
+    return _SEC_API_KEY
+
+
+def get_cik_for_ticker(ticker):
+    """
+    Converts a ticker to a CIK using the sec-api.io mapping API.
+    """
+    api_key = get_sec_api_key()
+    if not api_key:
+        return None
+
+    url = f"https://api.sec-api.io/mapping/ticker/{ticker}?token={api_key}"
+    data = _execute_session_get(url)
+    if data and isinstance(data, list) and len(data) > 0:
+        return data[0].get('cik')
+    return None
+
+
+def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
+    """
+    Gets a list of SEC filings for a given CIK and form type.
+    """
+    api_key = get_sec_api_key()
+    if not api_key:
+        return []
+
+    if not to_date:
+        to_date = datetime.now().strftime('%Y-%m-%d')
+
+    query = {
+        "query": {"query_string": {
+            "query": f"cik:\"{cik}\" AND formType:\"{form_type}\" AND filedAt:[{from_date} TO {to_date}]"}},
+        "from": "0",
+        "size": "100",  # Adjust as needed
+        "sort": [{"filedAt": {"order": "desc"}}]
+    }
+
+    url = f"https://api.sec-api.io?token={api_key}"
+
+    try:
+        response = SESSION.post(url, json=query, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return response.json().get('filings', [])
+    except requests.exceptions.RequestException as e:
+        print(f"  > Error during SEC API request for {cik}: {e}")
+        return []
+
+
+def download_sec_filing(txt_file_url):
+    """
+    Downloads the content of a single SEC filing from its direct TXT URL.
+    """
+    # **CORRECTION HERE: This function is now much simpler.**
+    try:
+        # The SEC requires a custom User-Agent header for direct requests.
+        headers = {'User-Agent': 'YourCompanyName YourName youremail@example.com'}
+        response = SESSION.get(txt_file_url, timeout=REQUEST_TIMEOUT, headers=headers)
+        response.raise_for_status()
+        return response.text
+    except requests.exceptions.RequestException as e:
+        print(f"  > Error downloading filing from {txt_file_url}: {e}")
+        return None

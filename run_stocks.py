@@ -47,3 +47,29 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    from workflows.stocks import stocks_sec_filings
+
+
+    def main():
+        """
+        This script runs all stock-related reference and historical data workflows.
+        """
+        print("--- 🚀 LAUNCHING ALL-STOCKS DATA WORKFLOW ---")
+
+        try:
+            # ... (keep all your existing workflow calls) ...
+
+            print("\n--- Processing SEC Filings for Stocks ---")
+            stocks_sec_filings.fetch_and_save_sec_filings()
+            print("\n--- ✔️ SEC Filings Complete ---")
+
+
+        except Exception as e:
+            print(f"\n--- ❌ A top-level error occurred during the stock workflows: {e} ---")
+
+        print("\n--- ✅ ALL-STOCKS WORKFLOW FINISHED ---")
+
+
+    if __name__ == "__main__":
+        main()
