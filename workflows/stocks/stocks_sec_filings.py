@@ -1,7 +1,9 @@
 # workflows/stocks/stocks_sec_filings.py
 
 import os
+import time
 from project_core import api_handler, file_manager, error_logger
+
 
 def _get_tickers_with_trading_history():
     """Gets a list of tickers from the trading_history directory."""
@@ -15,6 +17,7 @@ def _get_tickers_with_trading_history():
         return []
 
     return [d for d in os.listdir(trading_history_root) if os.path.isdir(os.path.join(trading_history_root, d))]
+
 
 def fetch_and_save_sec_filings():
     """
@@ -53,8 +56,13 @@ def fetch_and_save_sec_filings():
                     if not filing_txt_url:
                         continue
 
-                    # Get the filing content from the direct TXT URL
-                    filing_content = api_handler.download_sec_filing(filing_txt_url)
+                    # Step 1: Download the full raw text
+                    raw_text = api_handler.download_raw_sec_filing(filing_txt_url)
+                    if not raw_text:
+                        continue  # Skip if download failed
+
+                    # Step 2: Parse and clean the raw text to get just the body
+                    filing_content = api_handler.parse_and_clean_filing_text(raw_text)
 
                     if filing_content:
                         # Create the directory structure
@@ -73,6 +81,9 @@ def fetch_and_save_sec_filings():
                     error_logger.log_error(ticker, filing_type, None, None, e, os.path.basename(__file__))
                     print(f"  > ❌ An error occurred while processing a filing for {ticker}: {e}")
 
+                finally:
+                    # Wait for a moment to avoid rate limiting on the SEC's side.
+                    time.sleep(0.5)
 
     print("\n--- ✅ SEC FILINGS WORKFLOW FINISHED ---")
 

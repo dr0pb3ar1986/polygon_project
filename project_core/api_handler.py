@@ -1,8 +1,12 @@
+# project_core/api_handler.py
 
 import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+import re
+import html
+from bs4 import BeautifulSoup
 
 # --- Global Configuration and Session for efficiency ---
 SESSION = requests.Session()
@@ -11,6 +15,7 @@ REQUEST_TIMEOUT = (5, 15)
 
 # --- Module-level cache for the API key to avoid re-reading the file ---
 _API_KEY = None
+_SEC_API_KEY = None
 
 
 def get_api_key():
@@ -26,14 +31,17 @@ def get_api_key():
             return None
     return _API_KEY
 
-def _execute_session_get(url, params=None):
+def _execute_session_get(url, params=None, headers=None):
     """
     A private helper to execute a GET request and handle common exceptions.
     """
     try:
-        response = SESSION.get(url, params=params, timeout=REQUEST_TIMEOUT)
+        response = SESSION.get(url, params=params, timeout=REQUEST_TIMEOUT, headers=headers)
         response.raise_for_status()
-        return response.json()
+        # Check if response is JSON before trying to decode
+        if 'application/json' in response.headers.get('Content-Type', ''):
+            return response.json()
+        return response.text # Return as text for non-JSON responses
     except requests.exceptions.Timeout:
         print(f"  > Request timed out for URL: {url}")
         return None
@@ -317,9 +325,6 @@ def get_short_volume_data(ticker, from_date, to_date):
 
 # --- SEC API Functions ---
 
-_SEC_API_KEY = None
-
-
 def get_sec_api_key():
     """
     Loads the SEC API key from the .env file, caching it for subsequent calls.
@@ -345,7 +350,11 @@ def get_cik_for_ticker(ticker):
     url = f"https://api.sec-api.io/mapping/ticker/{ticker}?token={api_key}"
     data = _execute_session_get(url)
     if data and isinstance(data, list) and len(data) > 0:
-        return data[0].get('cik')
+        # Ensure 'cik' exists and is not None before returning
+        cik = data[0].get('cik')
+        if cik:
+            return str(cik)
+    print(f"  > CIK not found for ticker: {ticker}")
     return None
 
 
@@ -364,7 +373,7 @@ def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
         "query": {"query_string": {
             "query": f"cik:\"{cik}\" AND formType:\"{form_type}\" AND filedAt:[{from_date} TO {to_date}]"}},
         "from": "0",
-        "size": "100",  # Adjust as needed
+        "size": "100",
         "sort": [{"filedAt": {"order": "desc"}}]
     }
 
@@ -378,19 +387,46 @@ def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
         print(f"  > Error during SEC API request for {cik}: {e}")
         return []
 
-
-def download_sec_filing(txt_file_url):
+def download_raw_sec_filing(txt_file_url):
     """
-    Downloads the content of a single SEC filing from its direct TXT URL.
+    Downloads the full, raw content of a single SEC filing from its direct .txt URL.
     """
-    # **CORRECTION HERE: This function is now much simpler.**
     try:
         # The SEC requires a custom User-Agent header for direct requests.
         headers = {'User-Agent': 'YourCompanyName YourName youremail@example.com'}
-        response = SESSION.get(txt_file_url, timeout=REQUEST_TIMEOUT, headers=headers)
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
-        print(f"  > Error downloading filing from {txt_file_url}: {e}")
+        response = _execute_session_get(txt_file_url, headers=headers)
+        return response
+    except Exception as e:
+        print(f"  > Error downloading raw filing from {txt_file_url}: {e}")
         return None
 
+
+# Replace the old function with this new one
+def parse_and_clean_filing_text(raw_filing_text):
+    """
+    Uses BeautifulSoup to parse the raw filing HTML and produce a clean,
+    readable text version with proper formatting.
+    """
+    if not raw_filing_text:
+        return None
+
+    # --- Step 1: Parse the HTML with BeautifulSoup ---
+    # We use the 'lxml' parser for its speed and ability to handle messy HTML.
+    soup = BeautifulSoup(raw_filing_text, 'lxml')
+
+    # --- Step 2: Extract Text and Apply Formatting ---
+    # The .get_text() method is powerful. We use a separator to preserve line breaks
+    # and tell it to strip extra whitespace.
+    text = soup.get_text(separator='\n', strip=True)
+
+    # --- Step 3: Refine Formatting with Targeted Regex ---
+    # Add emphasis to major headings like "PART I" or "Item 1A."
+    # This makes the document's structure immediately clear.
+    text = re.sub(r'(^\s*(PART\s+[IVX]+|ITEM\s+\d+[A-Z]?\.?)\s*$)',
+                  r'\n-- **\1** --', text, flags=re.MULTILINE | re.IGNORECASE)
+
+    # --- Step 4: Final Whitespace Cleanup ---
+    # Ensure there's a maximum of two consecutive newlines to create clean paragraphs.
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+
+    return text.strip()
