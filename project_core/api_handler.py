@@ -393,3 +393,4 @@ def download_sec_filing(txt_file_url):
     except requests.exceptions.RequestException as e:
         print(f"  > Error downloading filing from {txt_file_url}: {e}")
         return None
+

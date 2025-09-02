@@ -4,3 +4,5 @@ pyarrow
 configparser
 python-dotenv
 python-dateutil
+spacy==3.7.5
+sec-api-io
