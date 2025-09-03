@@ -63,7 +63,7 @@ def main():
         print("\n--- ✔️ Discovery Stage Complete ---")
     except Exception as e:
         print(f"\n--- ❌ An error occurred during the discovery stage: {e} ---")
-        return
+        return  # Stop the process if discovery fails
 
     # --- STAGE 2: Download the discovered files ---
     print("\n--- STAGE 2: Starting high-speed download process... ---")
