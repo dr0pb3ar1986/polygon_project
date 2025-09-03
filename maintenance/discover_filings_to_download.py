@@ -11,34 +11,31 @@ HEADERS = {'User-Agent': "stirling.sloth@gmail.com"}
 
 
 def get_filings_for_cik(cik):
-    """
-    Fetches all filings for a given CIK from sec-api.io.
-    """
-    # Add a delay to respect the sec-api.io rate limit (1 req/sec)
+    """Fetches all filings for a given CIK from sec-api.io."""
     # time.sleep(1.1)
-
     try:
         params = {
-            "token": API_TOKEN,
-            "cik": str(cik).zfill(10),
-            "size": "10000",
-            "sort": "filedAt,desc"
+            "token": API_TOKEN, "cik": str(cik).zfill(10),
+            "size": "10000", "sort": "filedAt,desc"
         }
         response = requests.get(API_URL, params=params, headers=HEADERS)
+
+        # DEBUG: Print the exact URL being requested
+        print(f"  > Requesting URL: {response.url}")
+
         response.raise_for_status()
         return response.json().get('filings', [])
     except requests.exceptions.RequestException as e:
+        # FIXED: Added the missing 'script_name' argument to the log_error call
+        script_name = os.path.basename(__file__)
         print(f"  > Error during SEC API request for {cik}: {e}")
-        error_logger.log_error(str(cik), "N/A", "N/A", API_URL, f"API request failed: {e}")
+        error_logger.log_error(str(cik), "N/A", "N/A", API_URL, f"API request failed: {e}", script_name)
         return []
 
 
 def main():
-    """
-    Main function to discover missing filings and create a download list.
-    """
+    """Main function to discover missing filings and create a download list."""
     print("--- 🚀 LAUNCHING FILING DISCOVERY SCRIPT ---")
-
     base_output_path = file_manager.get_output_path_from_config()
     targets_path = os.path.join(base_output_path, "stocks", "stocks_filings_targets.csv")
     download_list_path = os.path.join(base_output_path, "stocks", "stocks_filings_download_list.csv")
@@ -50,13 +47,10 @@ def main():
         return
 
     print(f"Discovering missing filings for {len(targets_df)} tickers...")
-
     all_filings_to_download = []
 
     for _, row in targets_df.iterrows():
-        ticker = row['ticker']
-        cik = row['CIK']
-
+        ticker, cik = row['ticker'], row['CIK']
         print(f"-- Discovering filings for: {ticker}")
 
         filings = get_filings_for_cik(cik)
@@ -77,9 +71,9 @@ def main():
             if not os.path.exists(target_path):
                 all_filings_to_download.append({
                     'ticker': ticker,
-                    'filing_type': form_type,
-                    'filing_date': filing_date,  # This was missing
-                    'filing_url': download_url,
+                    'form_type': form_type,
+                    'filing_date': filing_date,
+                    'download_url': download_url,
                     'target_path': target_path
                 })
 
@@ -87,14 +81,9 @@ def main():
 
     if all_filings_to_download:
         try:
-            download_df = pd.DataFrame(all_filings_to_download)
-            download_df.to_csv(download_list_path, index=False)
+            pd.DataFrame(all_filings_to_download).to_csv(download_list_path, index=False)
             print(f"✅ Successfully saved download list to: {download_list_path}")
         except Exception as e:
             print(f"  > ❌ Could not save download list: {e}")
 
     print("\n--- ✅ DISCOVERY SCRIPT FINISHED ---")
-
-
-if __name__ == "__main__":
-    main()
