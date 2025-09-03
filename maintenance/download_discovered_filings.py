@@ -1,83 +1,81 @@
-# maintenance/download_discovered_filings.py
-
 import os
-import time
 import pandas as pd
+import requests
 import concurrent.futures
-from project_core import api_handler, file_manager, error_logger
+import time
+from project_core import file_manager, error_logger
 
+# --- Constants ---
+# SEC's rate limit is 10 requests/sec. We'll be conservative.
+# Headers to mimic a browser visit
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
+}
 
-def download_and_save_filing(job):
+def download_and_save_filing(job_details):
     """
-    Worker function to download, parse, and save a single filing.
+    Downloads a single filing based on the job details provided.
     """
-    url = job.get('filing_url')
-    target_path = job.get('target_path')
-    ticker = job.get('ticker')
+    ticker = job_details['ticker']
+    form_type = job_details['form_type']
+    filing_date = job_details['filing_date']
+    download_url = job_details['download_url']
+    target_path = job_details['target_path']
 
-    if not all([url, target_path, ticker]):
-        return
+    # Create the directory if it doesn't exist
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+    # Friendly print statement for the user
+    print(f"  > Downloading for {ticker}: {os.path.basename(target_path)}")
+
+    # Add a delay to respect the SEC's rate limits
+    time.sleep(0.15)
 
     try:
-        print(f"  > Downloading for {ticker}: {os.path.basename(target_path)}")
+        response = requests.get(download_url, headers=HEADERS)
+        response.raise_for_status()  # Raise an HTTPError for bad responses (4xx or 5xx)
 
-        # Download, parse, and save
-        raw_content = api_handler.download_raw_sec_filing(url)
-        if not raw_content:
-            raise ValueError("Download failed, content is empty.")
+        if response.content:
+            with open(target_path, "wb") as f:
+                f.write(response.content)
+        else:
+            error_message = f"Download failed, content is empty."
+            print(f"  > ❌ ERROR for {ticker} - {os.path.basename(target_path)}: {error_message}")
+            error_logger.log_error(ticker, filing_date, filing_date, download_url, error_message)
 
-        filing_content = api_handler.parse_and_clean_filing_text(raw_content)
-        if not filing_content:
-            raise ValueError("Parsing failed, content is empty.")
-
-        # Ensure directory exists before writing
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        with open(target_path, 'w', encoding='utf-8') as f:
-            f.write(filing_content)
-
-    except Exception as e:
-        print(f"  > ❌ ERROR for {ticker} - {os.path.basename(target_path)}: {e}")
-        error_logger.log_error(
-            ticker=ticker,
-            fidelity=job.get('filing_type'),
-            start_date=None,
-            end_date=None,
-            reason=f"Failed to download/save from {url}: {e}",
-            script_name=os.path.basename(__file__)
-        )
+    except requests.exceptions.RequestException as e:
+        error_message = f"Failed to download/save from {download_url}: {e}"
+        print(f"  > 🔴 ERROR LOGGED for {ticker} ({filing_date}): {error_message}")
+        error_logger.log_error(ticker, filing_date, filing_date, download_url, str(e))
 
 
 def main():
-    """Main workflow to download all filings from the generated list."""
-    error_logger.register_error_handler()
-    print("--- 🚀 LAUNCHING HIGH-SPEED FILING DOWNLOADER ---")
-
+    """
+    Main function to orchestrate the download of discovered filings.
+    """
     base_output_path = file_manager.get_output_path_from_config()
     download_list_path = os.path.join(base_output_path, "stocks", "stocks_filings_download_list.csv")
 
     if not os.path.exists(download_list_path):
-        print("Error: Download list not found. Please run 'discover_filings_to_download.py' first.")
+        print("  > Download list not found. Please run the discovery script first.")
         return
 
     try:
         df = pd.read_csv(download_list_path)
-        download_jobs = df.to_dict('records')
+        if df.empty:
+            print("  > Download list is empty. No new filings to download.")
+            return
+        jobs = df.to_dict('records')
     except Exception as e:
-        print(f"Error reading download list: {e}")
+        print(f"  > Error reading the download list: {e}")
         return
 
-    if not download_jobs:
-        print("Download list is empty. No filings to download.")
-        return
-
-    print(f"Starting download of {len(download_jobs)} filings...")
-
-    # High concurrency for fast I/O-bound downloading
-    max_workers = 75
+    # Using ThreadPoolExecutor to download files in parallel
+    # Adjust max_workers based on your machine's capabilities and network.
+    # Start with a conservative number and increase if stable.
+    max_workers = 50
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(download_and_save_filing, download_jobs)
-
-    print("\n--- ✅ DOWNLOAD SCRIPT FINISHED ---")
+        executor.map(download_and_save_filing, jobs)
 
 
 if __name__ == "__main__":
