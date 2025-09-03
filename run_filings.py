@@ -38,7 +38,7 @@ def _run_cleanup_pass():
     print(f"  > Found {len(missed_files)} files to re-download. Starting cleanup...")
 
     for job in missed_files:
-        download_discovered_filings.download_and_save_filing(job)
+        download_filings.download_and_save_filing(job)
 
 
 def main():
@@ -57,7 +57,7 @@ def main():
 
     print("\n--- STAGE 1: Discovering missing filings... ---")
     try:
-        discover_filings_to_download.main()
+        discover_filings.main()
         print("\n--- ✔️ Discovery Stage Complete ---")
     except Exception as e:
         print(f"\n--- ❌ An error occurred during the discovery stage: {e} ---")
@@ -65,7 +65,7 @@ def main():
 
     print("\n--- STAGE 2: Starting high-speed download process... ---")
     try:
-        download_discovered_filings.main()
+        download_filings.main()
         print("\n--- ✔️ Download Stage Complete ---")
     except Exception as e:
         print(f"\n--- ❌ An error occurred during the download stage: {e} ---")
