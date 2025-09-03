@@ -37,16 +37,8 @@ def _run_cleanup_pass():
 
     print(f"  > Found {len(missed_files)} files to re-download. Starting cleanup...")
 
-    max_workers = 20
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(download_discovered_filings.download_and_save_filing, job) for job in missed_files]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                print(f"  > ❌ An error occurred during cleanup download: {e}")
-
-    print("\n--- ✔️ Cleanup Stage Complete ---")
+    for job in missed_files:
+        download_discovered_filings.download_and_save_filing(job)
 
 
 def main():
