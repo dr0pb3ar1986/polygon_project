@@ -40,7 +40,7 @@ def _execute_session_get(url, params=None, headers=None):
         # Check if response is JSON before trying to decode
         if 'application/json' in response.headers.get('Content-Type', ''):
             return response.json()
-        return response # Return the full response object for non-JSON responses
+        return response.text # Return as text for non-JSON responses
     except requests.exceptions.Timeout:
         print(f"  > Request timed out for URL: {url}")
         return None
@@ -392,32 +392,39 @@ def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
 def download_raw_sec_filing(txt_file_url):
     """
     Downloads the full, raw content of a single SEC filing from its direct .txt URL.
-    It decodes the content as UTF-8, replacing any errors.
     """
     try:
         # The SEC requires a custom User-Agent header for direct requests.
-        headers = {'User-Agent': 'DataFetcher/1.0 (your_company; your_email@example.com)'}
-        response = _execute_session_get(txt_file_url, headers=headers)
-        # Decode response content explicitly to handle encoding issues gracefully
-        return response.content.decode('utf-8', errors='replace') if response else None
-    except Exception as e:
+        headers = {'User-Agent': 'PolygonProject/1.0 andre@example.com'}
+        response = SESSION.get(txt_file_url, timeout=REQUEST_TIMEOUT, headers=headers)
+        response.raise_for_status()
+        # Return the raw content as bytes, to let the parser handle encoding.
+        return response.content
+    except requests.exceptions.RequestException as e:
         print(f"  > Error downloading raw filing from {txt_file_url}: {e}")
         return None
 
 
-def parse_and_clean_filing_text(raw_filing_text):
+def parse_and_clean_filing_text(raw_filing_content):
     """
-    Uses BeautifulSoup to parse the raw filing HTML and produce a clean,
+    Uses BeautifulSoup to parse the raw filing content (bytes) and produce a clean,
     readable text version with proper formatting.
     """
-    if not raw_filing_text:
+    if not raw_filing_content:
         return None
 
-    # --- Step 1: Parse the HTML with BeautifulSoup ---
-    soup = BeautifulSoup(raw_filing_text, 'lxml')
+    # --- Step 1: Parse the content with BeautifulSoup, which will handle encoding ---
+    soup = BeautifulSoup(raw_filing_content, 'lxml')
 
     # --- Step 2: Extract Text and Apply Formatting ---
-    text = soup.get_text(separator='\n', strip=True)
+    # To avoid including garbled data from attachments, we prioritize the main
+    # html body of the document.
+    body_tag = soup.find('body')
+    if body_tag:
+        text = body_tag.get_text(separator='\n', strip=True)
+    else:
+        # Fallback to the whole document if no body tag is found
+        text = soup.get_text(separator='\n', strip=True)
 
     # --- Step 3: Refine Formatting with Targeted Regex ---
     text = re.sub(r'(^\s*(PART\s+[IVX]+|ITEM\s+\d+[A-Z]?\.?)\s*$)',
