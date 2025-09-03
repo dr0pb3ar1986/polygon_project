@@ -3,7 +3,7 @@ import time
 import pandas as pd
 import concurrent.futures
 from project_core import file_manager
-from maintenance import discover_filings_to_download, download_discovered_filings
+from maintenance import discover_filings, download_filings
 
 def _run_cleanup_pass():
     """
