@@ -4,6 +4,7 @@ import os
 import time
 import re
 from datetime import datetime
+import concurrent.futures
 from project_core import api_handler, file_manager, error_logger
 
 
@@ -106,9 +107,9 @@ def _process_ticker_filings(ticker, base_output_path):
                 error_logger.log_error(ticker, filing_type, None, None, e, os.path.basename(__file__))
                 print(f"  > ❌ An error occurred while processing a filing for {ticker}: {e}")
             finally:
-                # A short, single delay per filing is enough to stay within rate limits.
-                # The SEC allows 40 requests/sec. 0.05s is a safe delay.
-                time.sleep(0.05)
+                # With 5 workers, a 0.25s delay results in a max rate of 20 req/s (5 * 1/0.25 = 20),
+                # which is safely below the 40 req/s limit.
+                time.sleep(0.25)
 
 
 def fetch_and_save_sec_filings():
@@ -127,9 +128,18 @@ def fetch_and_save_sec_filings():
 
     base_output_path = file_manager.get_output_path_from_config()
 
-    # Processing tickers sequentially. Concurrency can be added back later if needed.
-    for ticker in tickers:
-        _process_ticker_filings(ticker, base_output_path)
+    # Use a ThreadPoolExecutor to process tickers concurrently
+    max_workers = 5
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Create a future for each ticker
+        futures = {executor.submit(_process_ticker_filings, ticker, base_output_path): ticker for ticker in tickers}
+
+        for future in concurrent.futures.as_completed(futures):
+            ticker = futures[future]
+            try:
+                future.result()  # Check for exceptions
+            except Exception as e:
+                print(f"  > ❌ An error occurred while processing ticker {ticker}: {e}")
 
     print("\n--- ✅ SEC FILINGS WORKFLOW FINISHED ---")
 
