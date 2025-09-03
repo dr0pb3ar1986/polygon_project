@@ -1,4 +1,4 @@
-# workflows/stocks/stocks_sec_filings.py
+# workflows/stocks/superceeded_stocks_sec_filings.py
 
 import os
 import time

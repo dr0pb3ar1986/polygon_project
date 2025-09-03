@@ -48,7 +48,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-    from workflows.stocks import stocks_sec_filings
+    from workflows.stocks import superceeded_stocks_sec_filings
 
 
     def main():
