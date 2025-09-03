@@ -12,7 +12,7 @@ HEADERS = {'User-Agent': "stirling.sloth@gmail.com"}
 
 def get_filings_for_cik(cik):
     """Fetches all filings for a given CIK from sec-api.io."""
-    # time.sleep(1.1)
+    time.sleep(0.1)
     try:
         params = {
             "token": API_TOKEN, "cik": str(cik).zfill(10),
@@ -49,6 +49,9 @@ def main():
     print(f"Discovering missing filings for {len(targets_df)} tickers...")
     all_filings_to_download = []
 
+    # Define the form types to target
+    target_forms = ['10-K', '10-Q', '8-K']
+
     for _, row in targets_df.iterrows():
         ticker, cik = row['ticker'], row['CIK']
         print(f"-- Discovering filings for: {ticker}")
@@ -56,7 +59,11 @@ def main():
         filings = get_filings_for_cik(cik)
 
         for filing in filings:
-            form_type = filing.get('formType', '').replace('/', '_')
+            form_type_raw = filing.get('formType', '')
+            if form_type_raw not in target_forms:
+                continue
+
+            form_type = form_type_raw.replace('/', '_')
             filing_date = filing.get('filedAt', '').split('T')[0]
             download_url = filing.get('linkToTxt')
 
@@ -64,7 +71,7 @@ def main():
                 continue
 
             folder_name = f"{ticker}_{form_type}"
-            file_name = f"{ticker}_{form_type}_{filing_date}.md"  # Changed extension to .md
+            file_name = f"{ticker}_{form_type}_{filing_date}.txt"  # Changed extension to .txt
             target_dir = os.path.join(base_output_path, "stocks", "filings", folder_name)
             target_path = os.path.join(target_dir, file_name)
 

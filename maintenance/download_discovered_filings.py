@@ -18,16 +18,16 @@ def download_and_save_filing(job_details):
     ticker = job_details['ticker']
     filing_date = job_details['filing_date']
     download_url = job_details['download_url']
-    # Ensure the target path has a .md extension
+    # Ensure the target path has a .txt extension
     target_path = job_details['target_path']
-    if not target_path.endswith('.md'):
-        target_path = os.path.splitext(target_path)[0] + '.md'
+    if not target_path.endswith('.txt'):
+        target_path = os.path.splitext(target_path)[0] + '.txt'
 
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
     print(f"  > Downloading for {ticker}: {os.path.basename(target_path)}")
 
-    time.sleep(0.15)
+    time.sleep(0.15) # Keep sleep for politeness
 
     try:
         response = requests.get(download_url, headers=HEADERS)
@@ -90,11 +90,7 @@ def main():
         print(f"  > Error reading the download list: {e}")
         return
 
-    max_workers = 50
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(download_and_save_filing, job) for job in jobs]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                future.result()
-            except Exception as e:
-                print(f"  > ❌ An error occurred in a download thread: {e}")
+    print(f"---  sequentially downloading {len(jobs)} filings ---")
+    for job in jobs:
+        download_and_save_filing(job)
+    print("--- ✅ DOWNLOAD SCRIPT FINISHED ---")
