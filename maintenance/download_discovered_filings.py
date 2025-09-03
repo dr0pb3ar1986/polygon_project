@@ -4,7 +4,7 @@ import requests
 import concurrent.futures
 import time
 from bs4 import BeautifulSoup
-from project_core import file_manager, error_logger
+from project_core import file_manager, error_logger, filing_parser
 
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'
@@ -13,12 +13,15 @@ HEADERS = {
 
 def download_and_save_filing(job_details):
     """
-    Downloads, processes with BeautifulSoup, and saves a single filing.
+    Downloads, processes with BeautifulSoup, formats to Markdown, and saves a single filing.
     """
     ticker = job_details['ticker']
     filing_date = job_details['filing_date']
     download_url = job_details['download_url']
+    # Ensure the target path has a .md extension
     target_path = job_details['target_path']
+    if not target_path.endswith('.md'):
+        target_path = os.path.splitext(target_path)[0] + '.md'
 
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
@@ -33,30 +36,26 @@ def download_and_save_filing(job_details):
         if response.content:
             # --- START: BeautifulSoup Parsing Logic ---
             soup = BeautifulSoup(response.content, 'lxml')
-
-            # Find all <DOCUMENT> tags
             docs = soup.find_all('document')
-
-            content_to_save = ""
+            raw_text = ""
             if docs:
-                # Typically, we want the text from the first complete submission document
-                # which is usually the first document that is not of type 'COVER' or 'GRAPHIC'.
                 for doc in docs:
                     doc_type_tag = doc.find('type')
-                    if doc_type_tag and doc_type_tag.get_text(strip=True).upper() not in ['GRAPHIC', 'COVER', 'EXCEL',
-                                                                                          'JSON']:
+                    if doc_type_tag and doc_type_tag.get_text(strip=True).upper() not in ['GRAPHIC', 'COVER', 'EXCEL', 'JSON']:
                         text_tag = doc.find('text')
                         if text_tag:
-                            content_to_save = text_tag.get_text(separator='\\n')
-                            break  # Found the main document, exit loop
-
-            # If no suitable <DOCUMENT> tag was found, fall back to the whole text
-            if not content_to_save:
-                content_to_save = soup.get_text(separator='\\n')
+                            raw_text = text_tag.get_text(separator='\\n')
+                            break
+            if not raw_text:
+                raw_text = soup.get_text(separator='\\n')
             # --- END: BeautifulSoup Parsing Logic ---
 
+            # --- START: Markdown Formatting ---
+            formatted_content = filing_parser.parse_to_markdown(raw_text)
+            # --- END: Markdown Formatting ---
+
             with open(target_path, "w", encoding='utf-8') as f:
-                f.write(content_to_save)
+                f.write(formatted_content)
         else:
             error_message = "Download failed, content is empty."
             print(f"  > ❌ ERROR for {ticker} - {os.path.basename(target_path)}: {error_message}")

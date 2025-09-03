@@ -64,7 +64,7 @@ def main():
                 continue
 
             folder_name = f"{ticker}_{form_type}"
-            file_name = f"{ticker}_{form_type}_{filing_date}.txt"
+            file_name = f"{ticker}_{form_type}_{filing_date}.md"  # Changed extension to .md
             target_dir = os.path.join(base_output_path, "stocks", "filings", folder_name)
             target_path = os.path.join(target_dir, file_name)
 
