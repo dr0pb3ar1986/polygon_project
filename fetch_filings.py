@@ -42,7 +42,7 @@ YEARS_TO_FETCH = 10
 
 # Adjusted Rate Limiting (Aimed at ~8 req/s total)
 MAX_WORKERS = 1  # Reduced from 5
-WORKER_PACING_SLEEP = 0.15  # Increased from 0.25 (Pacing requests within the worker)
+WORKER_PACING_SLEEP = 0.2  # Increased from 0.25 (Pacing requests within the worker)
 DISCOVERY_PACING_SLEEP = 0.02  # Pacing requests during the sequential discovery phase
 
 # Lock for thread-safe file appending (Crucial for concurrent saving)

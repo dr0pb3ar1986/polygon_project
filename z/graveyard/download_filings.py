@@ -7,7 +7,7 @@ import time
 from bs4 import BeautifulSoup
 import re  # Import re for regex operations
 from project_core import file_manager, error_logger
-from z_graveyard import filing_parser
+from z.graveyard import filing_parser
 
 # It's good practice to define a clear, descriptive User-Agent
 HEADERS = {
