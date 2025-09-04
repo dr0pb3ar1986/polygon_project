@@ -1,6 +1,4 @@
 # Import the required indices workflow modules
-from workflows.indices import indices_ticker_list
-from workflows.indices import indices_ticker_overview
 
 
 def main():

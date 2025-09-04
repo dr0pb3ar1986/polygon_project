@@ -6,11 +6,17 @@ from datetime import datetime
 from dotenv import load_dotenv
 import re
 from bs4 import BeautifulSoup
+import logging  # <-- Added Import
+import time  # <-- Added Import
 
 # --- Global Configuration and Session for efficiency ---
 SESSION = requests.Session()
 BASE_URL = "https://api.polygon.io"
-REQUEST_TIMEOUT = (5, 15)
+REQUEST_TIMEOUT = (5, 30)
+
+# SEC API Specifics
+SEC_API_BASE_URL = "https://api.sec-api.io"
+SEC_EXTRACTOR_ENDPOINT = f"{SEC_API_BASE_URL}/extractor"
 
 # --- Module-level cache for the API key to avoid re-reading the file ---
 _API_KEY = None
@@ -23,12 +29,29 @@ def get_api_key():
     """
     global _API_KEY
     if _API_KEY is None:
-        load_dotenv()  # <-- SEE, THIS LINE USES THE IMPORT!
+        load_dotenv()
         _API_KEY = os.getenv("POLYGON_API_KEY")
         if not _API_KEY:
-            print("Error: 'POLYGON_API_KEY' not found. Make sure it is set correctly in your .env file.")
+            # Standardized to use logging
+            logging.warning("Error: 'POLYGON_API_KEY' not found. Make sure it is set correctly in your .env file.")
             return None
     return _API_KEY
+
+
+def get_sec_api_key():
+    """
+    Loads the SEC API key from the .env file, caching it for subsequent calls.
+    """
+    global _SEC_API_KEY
+    if _SEC_API_KEY is None:
+        load_dotenv()
+        _SEC_API_KEY = os.getenv("SEC_API_KEY")
+        if not _SEC_API_KEY:
+            logging.error("SEC_API_KEY not found. Make sure it is set correctly in your .env file.")
+            # Raise an exception as the script cannot proceed
+            raise ValueError("SEC_API_KEY is required but not found.")
+    return _SEC_API_KEY
+
 
 def _execute_session_get(url, params=None, headers=None):
     """
@@ -40,13 +63,20 @@ def _execute_session_get(url, params=None, headers=None):
         # Check if response is JSON before trying to decode
         if 'application/json' in response.headers.get('Content-Type', ''):
             return response.json()
-        return response.text # Return as text for non-JSON responses
+        return response.text  # Return as text for non-JSON responses
     except requests.exceptions.Timeout:
-        print(f"  > Request timed out for URL: {url}")
+        # Standardized to use logging
+        logging.warning(f"  > Request timed out for URL: {url}")
         return None
     except requests.exceptions.RequestException as e:
-        print(f"  > Error during API request for {url}: {e}")
+        # Standardized to use logging
+        logging.error(f"  > Error during API request for {url}: {e}")
         return None
+
+
+# Note: The following Polygon functions still use 'print' for progress updates (e.g., "Fetching page X...").
+# This is kept as-is because 'print' is often used for user-facing progress in existing scripts,
+# while 'logging' (configured in the main workflow script) handles system events/errors.
 
 def _fetch_paginated_data_by_next_url(endpoint_path, params, results_extractor):
     """
@@ -80,6 +110,7 @@ def _fetch_paginated_data_by_next_url(endpoint_path, params, results_extractor):
             current_url = None
     return all_results
 
+
 def _stream_paginated_data_by_next_url(endpoint_path, params, results_extractor):
     """
     A generator-based helper for endpoints that use 'next_url' for pagination.
@@ -112,6 +143,7 @@ def _stream_paginated_data_by_next_url(endpoint_path, params, results_extractor)
         else:
             current_url = None
 
+
 def get_paginated_data(endpoint_path, params):
     """
     Fetches data from a paginated Polygon.io endpoint.
@@ -121,6 +153,7 @@ def get_paginated_data(endpoint_path, params):
         params,
         lambda data: data.get('results', [])
     )
+
 
 def _make_api_request(endpoint_path, params=None, log_message="", success_key='results', default_return_value=None):
     """
@@ -144,12 +177,14 @@ def _make_api_request(endpoint_path, params=None, log_message="", success_key='r
     else:
         return default_return_value
 
+
 def get_ticker_details(ticker):
     return _make_api_request(
         endpoint_path=f"/v3/reference/tickers/{ticker}",
         log_message=f"  > Fetching details for {ticker}...",
         default_return_value=None
     )
+
 
 def get_related_tickers(ticker):
     return _make_api_request(
@@ -158,12 +193,14 @@ def get_related_tickers(ticker):
         default_return_value=[]
     )
 
+
 def get_option_contract_details(option_ticker):
     return _make_api_request(
         endpoint_path=f"/v3/reference/options/contracts/{option_ticker}",
         log_message=f"  > Fetching details for {option_ticker}...",
         default_return_value=None
     )
+
 
 def get_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=None):
     api_key = get_api_key()
@@ -178,7 +215,8 @@ def get_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=
         from_timestamp = int(datetime.strptime(from_date, '%Y-%m-%d').timestamp() * 1000)
         to_timestamp = int(datetime.strptime(to_date, '%Y-%m-%d').timestamp() * 1000)
     except ValueError:
-        print(f"  > Invalid date format for {ticker}. Expected YYYY-MM-DD.")
+        # Standardized to use logging
+        logging.error(f"  > Invalid date format for {ticker}. Expected YYYY-MM-DD.")
         return []
 
     current_from = from_timestamp
@@ -206,10 +244,18 @@ def get_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=
 
         if len(results_on_page) < limit:
             break
-        last_timestamp = results_on_page[-1]['t']
-        current_from = last_timestamp + 1
+
+        # Robustness check for timestamp key 't'
+        if results_on_page[-1] and 't' in results_on_page[-1]:
+            last_timestamp = results_on_page[-1]['t']
+            current_from = last_timestamp + 1
+        else:
+            logging.warning(f"Timestamp key 't' missing in the last result for {ticker}. Stopping pagination.")
+            break
+
         page_count += 1
     return all_results
+
 
 def stream_aggregate_data(ticker, multiplier, timespan, from_date, to_date, params=None):
     """
@@ -223,7 +269,8 @@ def stream_aggregate_data(ticker, multiplier, timespan, from_date, to_date, para
         from_timestamp = int(datetime.strptime(from_date, '%Y-%m-%d').timestamp() * 1000)
         to_timestamp = int(datetime.strptime(to_date, '%Y-%m-%d').timestamp() * 1000)
     except ValueError:
-        print(f"  > Invalid date format for {ticker}. Expected YYYY-MM-DD.")
+        # Standardized to use logging
+        logging.error(f"  > Invalid date format for {ticker}. Expected YYYY-MM-DD.")
         return
 
     current_from = from_timestamp
@@ -246,8 +293,14 @@ def stream_aggregate_data(ticker, multiplier, timespan, from_date, to_date, para
 
         yield results_on_page
 
-        last_timestamp = results_on_page[-1]['t']
-        current_from = last_timestamp + 1
+        # Robustness check for timestamp key 't'
+        if results_on_page[-1] and 't' in results_on_page[-1]:
+            last_timestamp = results_on_page[-1]['t']
+            current_from = last_timestamp + 1
+        else:
+            logging.warning(f"Timestamp key 't' missing in the last result for {ticker}. Stopping pagination.")
+            break
+
 
 def get_trades_data(ticker, from_date, to_date, params=None):
     endpoint = f"/v3/trades/{ticker}"
@@ -257,6 +310,7 @@ def get_trades_data(ticker, from_date, to_date, params=None):
     request_params['limit'] = 50000
     print(f"--- Fetching Trades for {ticker} from {from_date} to {to_date} ---")
     return get_paginated_data(endpoint, request_params)
+
 
 def stream_trades_data(ticker, from_date, to_date, params=None):
     """Streams trade data page by page to conserve memory."""
@@ -284,62 +338,61 @@ def get_technical_indicator_data(indicator_name, ticker, timespan, from_date, to
         lambda data: data.get('results', {}).get('values', [])
     )
 
+
+# ... (Keep all other specific Polygon functions: get_sma_data, get_ema_data, etc.) ...
 def get_sma_data(ticker, timespan, from_date, to_date, window=50):
     return get_technical_indicator_data('sma', ticker, timespan, from_date, to_date, params={'window': window})
 
+
 def get_ema_data(ticker, timespan, from_date, to_date, window=50):
     return get_technical_indicator_data('ema', ticker, timespan, from_date, to_date, params={'window': window})
+
 
 def get_macd_data(ticker, timespan, from_date, to_date, short_window=12, long_window=26, signal_window=9):
     params = {'short_window': short_window, 'long_window': long_window, 'signal_window': signal_window}
     return get_technical_indicator_data('macd', ticker, timespan, from_date, to_date, params)
 
+
 def get_rsi_data(ticker, timespan, from_date, to_date, window=14):
     return get_technical_indicator_data('rsi', ticker, timespan, from_date, to_date, params={'window': window})
+
 
 def get_ipos_data(ticker, from_date, to_date):
     params = {'ticker': ticker, 'date.gte': from_date, 'date.lte': to_date, 'limit': 1000}
     return get_paginated_data('/v3/reference/ipo', params)
 
+
 def get_splits_data(ticker, from_date, to_date):
     params = {'ticker': ticker, 'execution_date.gte': from_date, 'execution_date.lte': to_date, 'limit': 1000}
     return get_paginated_data('/v3/reference/splits', params)
+
 
 def get_dividends_data(ticker, from_date, to_date):
     params = {'ticker': ticker, 'ex_dividend_date.gte': from_date, 'ex_dividend_date.lte': to_date, 'limit': 1000}
     return get_paginated_data('/v3/reference/dividends', params)
 
+
 def get_ticker_events_data(ticker, from_date, to_date):
     params = {'ticker': ticker, 'date.gte': from_date, 'date.lte': to_date, 'limit': 1000}
     return get_paginated_data('/v3/reference/ticker-events', params)
+
 
 def get_financials_data(ticker, from_date, to_date):
     params = {'ticker': ticker, 'filing_date.gte': from_date, 'filing_date.lte': to_date, 'limit': 100}
     return get_paginated_data('/vX/reference/financials', params)
 
+
 def get_short_interest_data(ticker, from_date, to_date):
     params = {'report_date.gte': from_date, 'report_date.lte': to_date, 'limit': 1000}
     return get_paginated_data(f'/v3/short-interest/{ticker}', params)
+
 
 def get_short_volume_data(ticker, from_date, to_date):
     params = {'date.gte': from_date, 'date.lte': to_date, 'limit': 1000}
     return get_paginated_data(f'/v3/short-volume/{ticker}', params)
 
+
 # --- SEC API Functions ---
-
-def get_sec_api_key():
-    """
-    Loads the SEC API key from the .env file, caching it for subsequent calls.
-    """
-    global _SEC_API_KEY
-    if _SEC_API_KEY is None:
-        load_dotenv()
-        _SEC_API_KEY = os.getenv("SEC_API_IO_KEY")
-        if not _SEC_API_KEY:
-            print("Error: 'SEC_API_IO_KEY' not found. Make sure it is set correctly in your .env file.")
-            return None
-    return _SEC_API_KEY
-
 
 def get_cik_for_ticker(ticker):
     """
@@ -350,87 +403,97 @@ def get_cik_for_ticker(ticker):
         return None
 
     url = f"https://api.sec-api.io/mapping/ticker/{ticker}?token={api_key}"
+
+    # The existing _execute_session_get helper is generic enough to handle this
     data = _execute_session_get(url)
+
     if data and isinstance(data, list) and len(data) > 0:
         # Ensure 'cik' exists and is not None before returning
         cik = data[0].get('cik')
         if cik:
             return str(cik)
-    print(f"  > CIK not found for ticker: {ticker}")
+    # Standardized to use logging
+    logging.warning(f"  > CIK not found for ticker: {ticker}")
     return None
 
 
-def get_sec_filings(cik, form_type, from_date="1994-01-01", to_date=None):
+def execute_sec_api_query(payload):
     """
-    Gets a list of SEC filings for a given CIK and form type.
+    Executes a POST request to the SEC API Query endpoint (used for discovery).
     """
     api_key = get_sec_api_key()
-    if not api_key:
-        return []
+    # The Query API uses POST to the base URL with the token in the query string.
+    url = f"{SEC_API_BASE_URL}?token={api_key}"
 
-    if not to_date:
-        to_date = datetime.now().strftime('%Y-%m-%d')
+    try:
+        # Must use SESSION.post for POST requests
+        response = SESSION.post(url, json=payload, timeout=REQUEST_TIMEOUT)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"HTTP Error during SEC API Query request: {e.response.status_code} - {e}")
+        if e.response.status_code == 429:
+            logging.warning("Rate limit hit (429) during Query API. Sleeping for 30 seconds.")
+            time.sleep(30)
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error during SEC API Query request: {e}")
+        return None
 
-    query = {
-        "query": {"query_string": {
-            "query": f"cik:\"{cik}\" AND formType:\"{form_type}\" AND filedAt:[{from_date} TO {to_date}]"}},
-        "from": "0",
-        "size": "100",
-        "sort": [{"filedAt": {"order": "desc"}}]
+
+def execute_sec_extractor_request(filing_url, item_code, return_type="text"):
+    """
+    Executes a GET request to the SEC API Extractor endpoint with retry logic for 'processing' status.
+    """
+    api_key = get_sec_api_key()
+    params = {
+        "url": filing_url,
+        "item": item_code,
+        "type": return_type,
+        "token": api_key
     }
 
-    url = f"https://api.sec-api.io?token={api_key}"
+    max_retries = 4
+    for attempt in range(max_retries):
+        try:
+            # Use SESSION.get directly here to handle the specific 'processing' retry logic
+            response = SESSION.get(SEC_EXTRACTOR_ENDPOINT, params=params, timeout=REQUEST_TIMEOUT)
 
-    try:
-        response = SESSION.post(url, json=query, timeout=REQUEST_TIMEOUT)
-        response.raise_for_status()
-        return response.json().get('filings', [])
-    except requests.exceptions.RequestException as e:
-        print(f"  > Error during SEC API request for {cik}: {e}")
-        return []
+            if response.status_code == 200:
+                content = response.text
+                # Check for the specific "processing" response status
+                if content.strip().lower() == "processing":
+                    if attempt < max_retries - 1:
+                        # As advised by docs, wait and retry
+                        logging.info(f"Filing still processing for {item_code}. Retrying in 1.5 seconds...")
+                        time.sleep(1.5)
+                        continue
+                    else:
+                        logging.warning(f"Max retries reached for {filing_url} item {item_code}. Status: Processing.")
+                        return None
+                return content
 
-def download_raw_sec_filing(txt_file_url):
-    """
-    Downloads the full, raw content of a single SEC filing from its direct .txt URL.
-    """
-    try:
-        # The SEC requires a custom User-Agent header for direct requests.
-        headers = {'User-Agent': 'PolygonProject/1.0 andre@example.com'}
-        response = SESSION.get(txt_file_url, timeout=REQUEST_TIMEOUT, headers=headers)
-        response.raise_for_status()
-        # Return the raw content as bytes, to let the parser handle encoding.
-        return response.content
-    except requests.exceptions.RequestException as e:
-        print(f"  > Error downloading raw filing from {txt_file_url}: {e}")
-        return None
+            # If status is not 200, raise HTTPError
+            response.raise_for_status()
 
-
-def parse_and_clean_filing_text(raw_filing_content):
-    """
-    Uses BeautifulSoup to parse the raw filing content (bytes) and produce a clean,
-    readable text version with proper formatting.
-    """
-    if not raw_filing_content:
-        return None
-
-    # --- Step 1: Parse the content with BeautifulSoup, which will handle encoding ---
-    soup = BeautifulSoup(raw_filing_content, 'lxml')
-
-    # --- Step 2: Extract Text and Apply Formatting ---
-    # To avoid including garbled data from attachments, we prioritize the main
-    # html body of the document.
-    body_tag = soup.find('body')
-    if body_tag:
-        text = body_tag.get_text(separator='\n', strip=True)
-    else:
-        # Fallback to the whole document if no body tag is found
-        text = soup.get_text(separator='\n', strip=True)
-
-    # --- Step 3: Refine Formatting with Targeted Regex ---
-    text = re.sub(r'(^\s*(PART\s+[IVX]+|ITEM\s+\d+[A-Z]?\.?)\s*$)',
-                  r'\n-- **\1** --', text, flags=re.MULTILINE | re.IGNORECASE)
-
-    # --- Step 4: Final Whitespace Cleanup ---
-    text = re.sub(r'\n\s*\n', '\n\n', text)
-
-    return text.strip()
+        except requests.exceptions.HTTPError as e:
+            # Specific handling for common errors
+            if e.response.status_code == 429:
+                logging.warning("Rate limit hit (429) during Extractor API. Sleeping for 10 seconds and retrying...")
+                time.sleep(10)
+                if attempt < max_retries - 1:
+                    continue
+            # 404 often means the section doesn't exist (common in 8-K or older filings)
+            elif e.response.status_code == 404:
+                # logging.debug(f"Section {item_code} not found (404) in {filing_url}.")
+                return None
+            else:
+                logging.error(f"HTTP Error extracting {item_code} from {filing_url}: {e.response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Connection Error during SEC Extractor request for {filing_url}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)  # Exponential backoff for connection errors
+            else:
+                return None
+    return None

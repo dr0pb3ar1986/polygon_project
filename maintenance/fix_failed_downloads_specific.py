@@ -4,7 +4,7 @@ from dateutil.relativedelta import relativedelta
 
 # Import the project's own tools
 from project_core import file_manager, workflow_helpers, error_logger
-from workflows.stocks import stocks_trading_history
+from workflows.trading_data.stocks import stocks_trading_history
 
 # --- USER ACTION REQUIRED ---
 # Edit this list to include the specific jobs that failed during the download.

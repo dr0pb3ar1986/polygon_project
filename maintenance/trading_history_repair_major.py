@@ -6,7 +6,7 @@ import collections
 
 # Import the project's own tools
 from project_core import file_manager, workflow_helpers, error_logger
-from workflows.stocks import stocks_trading_history
+from workflows.trading_data.stocks import stocks_trading_history
 
 
 def scan_and_repair_trading_history():

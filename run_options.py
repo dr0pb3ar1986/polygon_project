@@ -1,6 +1,5 @@
 # Import the required options workflow modules
-from workflows.options import options_ticker_list
-from workflows.options import options_ticker_overview
+from workflows.trading_data.options import options_ticker_list, options_ticker_overview
 
 
 def main():

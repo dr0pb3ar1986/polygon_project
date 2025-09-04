@@ -1,6 +1,5 @@
 # Import the required currency workflow modules
-from workflows.currency import currency_ticker_list
-from workflows.currency import currency_ticker_overview
+from workflows.trading_data.currency import currency_ticker_list, currency_ticker_overview
 
 
 def main():

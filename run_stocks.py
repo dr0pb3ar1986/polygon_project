@@ -1,11 +1,7 @@
 # Import all required stock workflow modules
-from workflows.stocks import stocks_ticker_list
-from workflows.stocks import stocks_ticker_overview
-from workflows.stocks import stocks_ticker_relatives
-from workflows.stocks import stocks_trading_history
-from workflows.stocks import stocks_technicals
-from workflows.stocks import stocks_corporate_actions
-from workflows.stocks import stocks_fundamentals
+from workflows.trading_data.stocks import stocks_ticker_overview, stocks_corporate_actions, stocks_ticker_relatives, \
+    stocks_fundamentals
+from workflows.trading_data.stocks import stocks_technicals, stocks_trading_history, stocks_ticker_list
 
 
 def main():
@@ -48,7 +44,7 @@ def main():
 if __name__ == "__main__":
     main()
 
-    from workflows.stocks import superceeded_stocks_sec_filings
+    from workflows.trading_data.stocks import superceeded_stocks_sec_filings
 
 
     def main():
