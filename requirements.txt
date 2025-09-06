@@ -9,3 +9,5 @@ lxml
 sec-api
 tqdm
 coloredlogs
+tqdm
+xhtml2pdf
