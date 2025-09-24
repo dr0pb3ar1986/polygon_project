@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pandas.api.types as pd_types
 
 # At the top of data_processor.py, add this import
 from project_core import file_manager
@@ -37,35 +38,57 @@ def save_to_csv(data, output_path):
     except Exception as e:
         print(f"Error saving data to CSV: {e}")
 
-
 def save_to_parquet(data, output_path, timestamp_col='t'):
     """
-    Takes a list of dictionaries, converts it to a pandas DataFrame with
-    proper data types, and saves it as a Parquet file.
+    Takes a list of dictionaries OR a pandas DataFrame, ensures proper data types,
+    standardizes the timestamp column, and saves it as a Parquet file.
 
-    :param data: The list of data to save.
+    :param data: The list of data or DataFrame to save.
     :param output_path: The full path for the output Parquet file.
-    :param timestamp_col: The name of the timestamp column in the raw data (e.g., 't').
+    :param timestamp_col: The name of the timestamp column in the raw data (e.g., 't' or 'date').
     """
-    if not data:
+    # Handle empty input gracefully
+    if not data or (isinstance(data, pd.DataFrame) and data.empty):
         print("No data provided to save. Skipping file creation.")
         return
 
     try:
-        print(f"Processing {len(data)} records for Parquet output...")
-        df = pd.DataFrame(data)
+        print(f"Processing records for Parquet output...")
 
-        if timestamp_col in df.columns:
-            df[timestamp_col] = pd.to_datetime(df[timestamp_col], unit='ms', utc=True)
+        # Handle input if it's already a DataFrame (e.g., Macro workflow)
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        else:
+            # Handle input if it's a list of dictionaries (e.g., Stocks workflow)
+            df = pd.DataFrame(data)
+
+        # Standardize the timestamp column
+        if timestamp_col and timestamp_col in df.columns:
+            # Check if the column is already a datetime object
+            if not pd_types.is_datetime64_any_dtype(df[timestamp_col]):
+                # If not datetime, attempt conversion.
+
+                # Robust check for Milliseconds (Polygon Aggregates): Numeric type AND very large values
+                # (1e10 is roughly 1970-05-01, ensuring we capture typical financial timestamps)
+                if pd_types.is_numeric_dtype(df[timestamp_col]) and df[timestamp_col].max() > 1e10:
+                    df[timestamp_col] = pd.to_datetime(df[timestamp_col], unit='ms', utc=True)
+                else:
+                    # Otherwise, assume it's a date string (like macro data YYYY-MM-DD)
+                    # We standardize these to UTC as well for consistency
+                    df[timestamp_col] = pd.to_datetime(df[timestamp_col], errors='coerce').dt.tz_localize('UTC')
+
+            # Rename the source column (e.g., 't' or 'date') to the standardized 'timestamp'
             df.rename(columns={timestamp_col: 'timestamp'}, inplace=True)
 
+        # Use the existing helper (ensure it is named correctly based on your file)
         _ensure_directory_exists(output_path)
-        df.to_parquet(output_path, engine='pyarrow', compression='snappy')
+
+        # Save as Parquet (index=False is crucial)
+        df.to_parquet(output_path, engine='pyarrow', compression='snappy', index=False)
         print(f"Successfully saved data to {output_path}")
 
     except Exception as e:
         print(f"Error saving data to Parquet: {e}")
-
 
 def save_stream_to_parquet(data_generator, output_path, timestamp_col='t', first_chunk_callback=None):
     """

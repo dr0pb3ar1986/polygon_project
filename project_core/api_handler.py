@@ -338,8 +338,6 @@ def get_technical_indicator_data(indicator_name, ticker, timespan, from_date, to
         lambda data: data.get('results', {}).get('values', [])
     )
 
-
-# ... (Keep all other specific Polygon functions: get_sma_data, get_ema_data, etc.) ...
 def get_sma_data(ticker, timespan, from_date, to_date, window=50):
     return get_technical_indicator_data('sma', ticker, timespan, from_date, to_date, params={'window': window})
 
@@ -391,6 +389,44 @@ def get_short_volume_data(ticker, from_date, to_date):
     params = {'date.gte': from_date, 'date.lte': to_date, 'limit': 1000}
     return get_paginated_data(f'/v3/short-volume/{ticker}', params)
 
+# --- Macroeconomic Data Functions (Federal Reserve Endpoints) ---
+
+def get_macro_data(endpoint_name, params=None):
+    """
+    Generalized function to fetch data from the /fed/v1 endpoints.
+    These endpoints are paginated and use the standard 'results' key.
+    """
+    # Endpoint path based on the documentation provided
+    endpoint_path = f"/fed/v1/{endpoint_name}"
+
+    request_params = params.copy() if params else {}
+    # Request the maximum limit and sort ascending for historical data
+    # These specific parameters are required by the macro workflow.
+    if 'limit' not in request_params:
+        request_params['limit'] = 50000
+    if 'sort' not in request_params:
+        # The documentation confirms the sort parameter is 'date.asc'
+        request_params['sort'] = 'date.asc'
+
+    print(f"--- Fetching Macro Data for: {endpoint_name} ---")
+
+    # Use the existing generalized pagination helper
+    return get_paginated_data(endpoint_path, request_params)
+
+
+def get_treasury_yields(params=None):
+    """Fetches the history of US Treasury Yields."""
+    return get_macro_data("treasury-yields", params)
+
+
+def get_inflation_realized(params=None):
+    """Fetches the history of realized inflation (CPI/PCE)."""
+    return get_macro_data("inflation", params)
+
+
+def get_inflation_expectations(params=None):
+    """Fetches the history of inflation expectations."""
+    return get_macro_data("inflation-expectations", params)
 
 # --- SEC API Functions ---
 
