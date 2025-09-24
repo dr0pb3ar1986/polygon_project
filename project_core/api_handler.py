@@ -396,24 +396,44 @@ def get_short_volume_data(ticker, from_date, to_date):
 
 def get_cik_for_ticker(ticker):
     """
-    Converts a ticker to a CIK using the sec-api.io mapping API.
+    Converts a ticker to a CIK using the sec-api.io mapping API with a fallback
+    to the public SEC EDGAR API.
     """
     api_key = get_sec_api_key()
     if not api_key:
         return None
 
-    url = f"https://api.sec-api.io/mapping/ticker/{ticker}?token={api_key}"
+    # --- Primary Lookup: sec-api.io ---
+    try:
+        url = f"https://api.sec-api.io/mapping/ticker/{ticker}?token={api_key}"
+        data = _execute_session_get(url)
+        if data and isinstance(data, list) and len(data) > 0:
+            cik = data[0].get('cik')
+            if cik:
+                return str(cik)
+    except Exception as e:
+        logging.warning(f"  > Primary CIK lookup for {ticker} failed with error: {e}. Trying fallback.")
 
-    # The existing _execute_session_get helper is generic enough to handle this
-    data = _execute_session_get(url)
+    # --- Fallback Lookup: Public SEC EDGAR API ---
+    logging.info(f"  > Attempting fallback CIK lookup for {ticker} using SEC.gov API...")
+    try:
+        # The SEC has a public API that maps tickers to CIKs.
+        # We search for the ticker in the master list.
+        url = f"https://www.sec.gov/files/company_tickers.json"
+        response = requests.get(url, headers={'User-Agent': 'YourCompanyName your_email@example.com'})
+        response.raise_for_status()
+        ticker_list = response.json()
 
-    if data and isinstance(data, list) and len(data) > 0:
-        # Ensure 'cik' exists and is not None before returning
-        cik = data[0].get('cik')
-        if cik:
-            return str(cik)
-    # Standardized to use logging
-    logging.warning(f"  > CIK not found for ticker: {ticker}")
+        for entry in ticker_list:
+            if entry.get('ticker') == ticker.upper():
+                cik = str(entry.get('cik_str')).zfill(10)
+                logging.info(f"  > Fallback successful: Found CIK {cik} for {ticker}.")
+                return cik
+
+    except requests.exceptions.RequestException as e:
+        logging.error(f"  > Failed to access public SEC API for CIK lookup: {e}")
+
+    logging.warning(f"  > CIK not found for ticker: {ticker} after both attempts.")
     return None
 
 

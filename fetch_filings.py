@@ -305,15 +305,15 @@ def main_workflow():
     try:
         targets_df = pd.read_csv(INPUT_CSV)
 
-        # Handle CIK formatting and validation robustly
-        # 1. Clean input: Ensure CIK column is string and clean potential float representations
+        # New logic: Process CIKs, using existing CIKs if they are valid numbers.
         targets_df['CIK_CLEAN'] = targets_df['CIK'].fillna('NOT_FOUND').astype(str).str.replace(r'\.0$', '', regex=True)
+        targets_df['CIK_UNPADDED'] = targets_df['CIK_CLEAN'].apply(
+            lambda x: x.lstrip('0') if x.isnumeric() else 'NOT_FOUND')
+        targets_df['CIK_PADDED'] = targets_df['CIK_CLEAN'].apply(
+            lambda x: x.zfill(10) if x.isnumeric() else 'NOT_FOUND')
 
-        # 2. Create the UNPADDED version for the API Query
-        targets_df['CIK_UNPADDED'] = targets_df['CIK_CLEAN'].apply(lambda x: x.lstrip('0') if x.isnumeric() else x)
-
-        # 3. Create the PADDED version for official metadata
-        targets_df['CIK_PADDED'] = targets_df['CIK_CLEAN'].apply(lambda x: x.zfill(10) if x.isnumeric() else x)
+        # New column to indicate whether to perform a lookup
+        targets_df['NEEDS_LOOKUP'] = ~targets_df['CIK_CLEAN'].apply(str.isnumeric)
 
         targets = targets_df.to_dict('records')
     except FileNotFoundError:
@@ -331,20 +331,20 @@ def main_workflow():
     print("\n--- STAGE 1: Discovering Filings Metadata (10 Years History) ---")
     # Using tqdm for a progress bar during discovery
     for target in tqdm(targets, desc="Discovering Filings"):
-        # Use the appropriate CIK versions
-        cik_query = target['CIK_UNPADDED']
-        cik_meta = target['CIK_PADDED']
         ticker = target['ticker']
 
-        # Skip targets where CIK is clearly invalid
-        if not cik_query.isnumeric() or not cik_query:
+        # Determine which CIK to use
+        cik_query = target['CIK_UNPADDED']
+        cik_meta = target['CIK_PADDED']
+
+        if target['NEEDS_LOOKUP']:
             logging.warning(
-                f"Skipping discovery for {ticker} due to invalid CIK: {target['CIK_CLEAN']}. Please correct the input CSV.")
+                f"Skipping discovery for {ticker} due to invalid CIK: {target['CIK_CLEAN']}. Please correct the input CSV."
+            )
             continue
 
         filings = discover_filings(cik_query, cik_meta, ticker)
         for filing in filings:
-            # Attach the PADDED CIK and Ticker for the worker function
             filing['_target_cik_meta'] = cik_meta
             filing['_target_ticker'] = ticker
         all_filings_metadata.extend(filings)
@@ -355,7 +355,6 @@ def main_workflow():
     # De-duplicate based on Accession Number AND Ticker.
     unique_filings = {}
     for f in all_filings_metadata:
-        # Create a unique key based on Accession Number and the Target Ticker
         key = (f.get('accessionNo'), f.get('_target_ticker'))
         if f.get('accessionNo') and key not in unique_filings:
             unique_filings[key] = f
@@ -370,14 +369,12 @@ def main_workflow():
     print(f"\n--- STAGE 2: Extracting Sections (Workers: {MAX_WORKERS}) ---")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        # Create a future for each filing extraction
         future_to_filing = {
             executor.submit(extract_and_process_filing, filing, filing['_target_cik_meta'],
                             filing['_target_ticker']): filing
             for filing in unique_filings.values()
         }
 
-        # Process results as they complete and save immediately
         try:
             for future in tqdm(concurrent.futures.as_completed(future_to_filing), total=len(unique_filings),
                                desc="Extracting & Saving"):
@@ -385,12 +382,10 @@ def main_workflow():
                 try:
                     records = future.result()
                     if records:
-                        # Save records immediately using the thread-safe function
                         save_records(records, filing['_target_ticker'])
                 except Exception as exc:
                     logging.error(f"Filing {filing.get('accessionNo')} generated an exception during extraction: {exc}")
         except KeyboardInterrupt:
-            # Handle graceful shutdown if the user interrupts the process
             logging.warning("Workflow interrupted by user. Shutting down workers...")
             executor.shutdown(wait=True, cancel_futures=True)
             logging.info("Shutdown complete.")
