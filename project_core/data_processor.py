@@ -17,26 +17,31 @@ def _ensure_directory_exists(filepath):
 
 def save_to_csv(data, output_path):
     """
-    Takes a list of dictionaries, converts it to a pandas DataFrame,
+    Takes a list of dictionaries or a pandas DataFrame,
     and saves it as a CSV file.
 
-    :param data: The list of data to save.
+    :param data: The list of data or DataFrame to save.
     :param output_path: The full path for the output CSV file.
     """
-    if not data:
+    if (isinstance(data, pd.DataFrame) and data.empty) or \
+       (not isinstance(data, pd.DataFrame) and not data):
         print("No data provided to save. Skipping file creation.")
         return
 
     try:
-        print(f"Processing {len(data)} records for CSV output...")
-        df = pd.DataFrame(data)
+        if isinstance(data, pd.DataFrame):
+            df = data
+        else:
+            df = pd.DataFrame(data)
 
+        print(f"Processing {len(df)} records for CSV output...")
         _ensure_directory_exists(output_path)
         df.to_csv(output_path, index=False)
         print(f"Successfully saved data to {output_path}")
 
     except Exception as e:
         print(f"Error saving data to CSV: {e}")
+
 
 def save_to_parquet(data, output_path, timestamp_col='t'):
     """
@@ -48,7 +53,8 @@ def save_to_parquet(data, output_path, timestamp_col='t'):
     :param timestamp_col: The name of the timestamp column in the raw data (e.g., 't' or 'date').
     """
     # Handle empty input gracefully
-    if not data or (isinstance(data, pd.DataFrame) and data.empty):
+    if (isinstance(data, pd.DataFrame) and data.empty) or \
+       (not isinstance(data, pd.DataFrame) and not data):
         print("No data provided to save. Skipping file creation.")
         return
 

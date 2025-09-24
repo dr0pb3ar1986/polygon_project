@@ -8,7 +8,7 @@ from project_core import api_handler, data_processor, file_manager
 
 def fetch_and_save_economic_indicators():
     """
-    Main workflow to fetch key macroeconomic indicators and save them as Parquet files.
+    Main workflow to fetch key macroeconomic indicators and save them as Parquet and CSV files.
     """
     print("--- LAUNCHING MACRO ECONOMIC INDICATORS WORKFLOW ---")
 
@@ -44,15 +44,20 @@ def fetch_and_save_economic_indicators():
             # The data_processor will handle the standardization.
             df = pd.DataFrame(data)
 
-            # Save the data
-            output_path = os.path.join(output_dir, f"{name}.parquet")
+            # --- Save the data in both formats ---
+            parquet_output_path = os.path.join(output_dir, f"{name}.parquet")
+            csv_output_path = os.path.join(output_dir, f"{name}.csv")
 
             # We call the enhanced save_to_parquet. We must specify timestamp_col='date'.
             data_processor.save_to_parquet(
                 df,
-                output_path,
+                parquet_output_path,
                 timestamp_col='date'
             )
+
+            # Save to CSV
+            data_processor.save_to_csv(df, csv_output_path)
+
 
             # Verification (Note: Column is now 'timestamp' after save_to_parquet finishes)
             # We check the original DataFrame 'df' for the 'date' column for verification before saving.
