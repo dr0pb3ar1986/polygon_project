@@ -11,3 +11,5 @@ tqdm
 coloredlogs
 tqdm
 xhtml2pdf
+polars
+pytz
